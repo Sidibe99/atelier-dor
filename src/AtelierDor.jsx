@@ -1005,6 +1005,21 @@ function SettlePurchaseModal({ purchase, balance, onClose, onSave }) {
     </Modal>
   );
 }
+function FormulaModal({ req, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(req.msg); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) { setCopied(false); } };
+  return (
+    <Modal title={`Demande — formule ${req.name}`} sub="Envoie ce message à ton revendeur" onClose={onClose}
+      footer={<div className="foot-actions" style={{ marginLeft: 0, width: "100%", flexWrap: "wrap" }}>
+        <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
+        <button className="btn btn-line" onClick={copy}>{copied ? "Copié ✓" : "Copier le message"}</button>
+        <a className="btn btn-gold" href={req.url} target="_blank" rel="noreferrer" onClick={onClose}>Envoyer sur WhatsApp</a>
+      </div>}>
+      <div className="req-msg">{req.msg}</div>
+      {!req.hasPhone && <p className="muted small" style={{ marginTop: 10 }}>Aucun numéro de revendeur n'est encore enregistré : le bouton ouvrira WhatsApp et tu choisiras le contact. Tu peux aussi copier le message et l'envoyer toi-même.</p>}
+    </Modal>
+  );
+}
 export default function App() {
   const [view, setView] = useState("dash");
   const [navOpen, setNavOpen] = useState(false);
@@ -1034,6 +1049,8 @@ export default function App() {
   const [trialUsed, setTrialUsed] = useState(false);
   const [acompteFor, setAcompteFor] = useState(null);
   const [settleFor, setSettleFor] = useState(null);
+  const [formulaReq, setFormulaReq] = useState(null);
+  const [clientView, setClientView] = useState(null);
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -1338,8 +1355,8 @@ export default function App() {
     const f = FORMULAS[k];
     const msg = `Bonjour, je souhaite la formule ${f.name} (${f.priceLabel}) pour Atelier d'Or${shop?.name ? ` — boutique : ${shop.name}` : ""}.`;
     const phone = String(resellerPhone || "").replace(/[^\d]/g, "");
-    if (phone) { try { window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank"); } catch (e) { /* */ } }
-    else { try { navigator.clipboard.writeText(msg); } catch (e) { /* */ } window.alert(`Demande prête :\n« ${msg} »\n\nContacte ton revendeur pour finaliser.`); }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    setFormulaReq({ name: f.name, msg, url, hasPhone: !!phone });
   };
   const goAdmin = () => { try { window.location.hash = "admin-create"; } catch (e) { /* */ } setRoute("admin"); };
   const exitAdmin = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
@@ -1456,7 +1473,7 @@ export default function App() {
                 <td className="num">{dateFr(s.date)}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
                 <td>{s.label}</td>
-                <td className="muted">{s.client || "—"}</td>
+                <td>{clientCell(s.client)}</td>
                 <td className="r num pos">+{fcfa(s.total)}</td>
               </tr>
             ))}
@@ -1484,7 +1501,7 @@ export default function App() {
                 <td className="num">{dateFr(s.date)}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                 <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
-                <td className="muted">{s.client || "—"}</td>
+                <td>{clientCell(s.client)}</td>
                 <td className="muted">{s.by || "—"}</td>
                 <td className="muted">{s.pay}</td>
                 <td className="r num">{fcfa(s.total - s.cost)}</td>
@@ -1513,7 +1530,7 @@ export default function App() {
             return (
             <tr key={p.id}>
               <td className="num">{dateFr(p.date)}</td>
-              <td>{p.client || "—"}</td>
+              <td>{clientCell(p.client)}</td>
               <td><Badge k={p.karat} /></td>
               <td className="r num">{g(p.weight)}</td>
               <td className="r num">{fcfa(p.ppg)}</td>
@@ -1533,6 +1550,63 @@ export default function App() {
       </table>
     </div>
   );
+
+  const clientCell = (name) => name
+    ? <button className="name-link" onClick={() => setClientView(name)}>{name}</button>
+    : <span className="muted">—</span>;
+
+  const renderClientHistory = () => {
+    const name = clientView;
+    const cl = clients.find((c) => c.name === name);
+    const cSales = sales.filter((s) => s.client === name);
+    const cPurch = purchases.filter((p) => p.client === name);
+    const totV = cSales.reduce((a, s) => a + s.total, 0);
+    const totA = cPurch.reduce((a, p) => a + p.total, 0);
+    const creance = cSales.reduce((a, s) => a + Math.max(0, balanceFor(s)), 0);
+    const reste = cPurch.reduce((a, p) => a + Math.max(0, purchaseBalance(p)), 0);
+    return (
+      <Modal title={name} sub={cl && cl.phone ? `Tél : ${cl.phone}` : "Historique du client"} onClose={() => setClientView(null)}>
+        <div className="ch-kpis">
+          <div className="ch-kpi"><span>Ventes</span><strong className="num">{fcfa(totV)}</strong></div>
+          <div className="ch-kpi"><span>Achats</span><strong className="num">{fcfa(totA)}</strong></div>
+          <div className="ch-kpi"><span>Il te doit</span><strong className="num neg">{fcfa(creance)}</strong></div>
+          <div className="ch-kpi"><span>À lui payer</span><strong className="num neg">{fcfa(reste)}</strong></div>
+        </div>
+        <h4 className="ch-h">Ventes <span className="count">{cSales.length}</span></h4>
+        {cSales.length === 0 ? <p className="muted small">Aucune vente.</p> : (
+          <table className="table compact"><tbody>
+            {cSales.map((s) => {
+              const bal = balanceFor(s);
+              return (
+                <tr key={s.id}>
+                  <td className="num">{dateFr(s.date)}</td>
+                  <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
+                  <td className="r num pos">{fcfa(s.total)}</td>
+                  <td className="r"><button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button></td>
+                </tr>
+              );
+            })}
+          </tbody></table>
+        )}
+        <h4 className="ch-h">Achats / rachats <span className="count">{cPurch.length}</span></h4>
+        {cPurch.length === 0 ? <p className="muted small">Aucun achat.</p> : (
+          <table className="table compact"><tbody>
+            {cPurch.map((p) => {
+              const bal = purchaseBalance(p);
+              return (
+                <tr key={p.id}>
+                  <td className="num">{dateFr(p.date)}</td>
+                  <td>Rachat {p.karat}K · {g(p.weight)}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
+                  <td className="r num neg">{fcfa(p.total)}</td>
+                  <td className="r"><button className="icon-btn" title="Voir le bordereau" onClick={() => setReceipt(buildReceipt({ ...p, paid: purchasePaidFor(p.id), kind: "purchase" }))}><Receipt size={15} /></button></td>
+                </tr>
+              );
+            })}
+          </tbody></table>
+        )}
+      </Modal>
+    );
+  };
 
   const renderStock = () => (
     <>
@@ -1647,7 +1721,7 @@ export default function App() {
                 {credits.map(({ s, bal }) => (
                   <tr key={s.id}>
                     <td className="num">{dateFr(s.date)}</td>
-                    <td>{s.client || "—"}</td>
+                    <td>{clientCell(s.client)}</td>
                     <td>{s.label}</td>
                     <td className="r num">{fcfa(s.total)}</td>
                     <td className="r num">{fcfa(s.total - bal)}</td>
@@ -1670,7 +1744,7 @@ export default function App() {
                 {dettes.map(({ p, bal }) => (
                   <tr key={p.id}>
                     <td className="num">{dateFr(p.date)}</td>
-                    <td>{p.client || "—"}</td>
+                    <td>{clientCell(p.client)}</td>
                     <td>Rachat {p.karat}K · {g(p.weight)}</td>
                     <td className="r num">{fcfa(p.total)}</td>
                     <td className="r num">{fcfa(p.total - bal)}</td>
@@ -2070,7 +2144,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
   }
   if (!license) {
-    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} trialUsed={trialUsed} logo={shop.logo} /></div>);
+    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} trialUsed={trialUsed} logo={shop.logo} />{formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}</div>);
   }
   if (!currentUser) {
     return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} logo={shop.logo} /></div>);
@@ -2149,10 +2223,12 @@ export default function App() {
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
+      {clientView && renderClientHistory()}
       {receipt && <ReceiptModal data={receipt} shop={shop} onClose={() => setReceipt(null)} />}
       {zView && <ZModal data={zView} shop={shop} onClose={() => setZView(null)} />}
       {acompteFor && <AcompteModal sale={acompteFor} balance={balanceFor(acompteFor)} onClose={() => setAcompteFor(null)} onSave={(p) => recordPayment(acompteFor, p)} />}
       {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
+      {formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
     </div>
@@ -2289,6 +2365,16 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 
 .seg { display:inline-flex; gap:4px; background:#efe8d9; border-radius:10px; padding:4px; margin-bottom:14px; }
 .seg-3 { display:flex; width:100%; }
+.req-msg { background:#f6efe1; border:1px solid var(--line); border-radius:11px; padding:14px 16px; color:var(--ink); font-size:14.5px; line-height:1.5; }
+.name-link { border:0; background:none; padding:0; font:inherit; color:var(--gold2); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.name-link:hover { color:var(--gold); }
+.ch-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px; }
+.ch-kpi { background:#f6efe1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:3px; }
+.ch-kpi span { font-size:11px; color:var(--muted); } .ch-kpi strong { font-size:15px; }
+.ch-h { font-family:'Fraunces',serif; font-size:15px; margin:14px 0 6px; color:var(--ink); }
+.table.compact td { padding:7px 8px; font-size:13px; }
+@media (max-width:560px){ .ch-kpis { grid-template-columns:repeat(2,1fr); } }
+a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
 .seg-3 .seg-btn { flex:1; justify-content:center; padding:8px 6px; font-size:12px; gap:5px; }
 @media (max-width:480px){ .seg-3 .seg-btn { font-size:11px; padding:8px 4px; } .seg-3 .seg-btn svg { display:none; } }
 .seg-lg { margin-bottom:18px; }
