@@ -23,6 +23,7 @@ const dateFr = (s) => { const [y, m, d] = s.split("-"); return `${d}/${m}/${y.sl
 
 const KARATS = [24, 22, 21, 18, 14];
 const OZ = 31.1034768;            // 1 once troy en grammes
+const PAY_METHODS = ["Espèces", "Wave", "Orange Money", "Banque"];
 const purity = (k) => k / 24;     // pureté (24K = or pur)
 const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée en direct)
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
@@ -156,13 +157,13 @@ const seedSales = [
   { id: uid(), date: daysAgo(0), kind: "or", client: "Aminata Diop", label: "Bracelet jonc ciselé 21K · 15,6 g", total: 1010000, cost: 930000, pay: "Wave" },
   { id: uid(), date: daysAgo(0), kind: "divers", client: "Cheikh Guèye", label: "Fournitures (fermoirs, fil)", total: 96000, cost: 58500, pay: "Espèces" },
   { id: uid(), date: daysAgo(1), kind: "or", client: "Fatou Ndiaye", label: "Boucles créoles 18K · 4,2 g ×2", total: 505000, cost: 460000, pay: "Espèces" },
-  { id: uid(), date: daysAgo(2), kind: "or", client: "Mamadou Fall", label: "Lingotin 10 g 24K", total: 800000, cost: 750000, pay: "Virement" },
+  { id: uid(), date: daysAgo(2), kind: "or", client: "Mamadou Fall", label: "Lingotin 10 g 24K", total: 800000, cost: 750000, pay: "Banque" },
   { id: uid(), date: daysAgo(3), kind: "divers", client: "Awa Bâ", label: "Écrins + pochettes", total: 14000, cost: 5400, pay: "Espèces" },
   { id: uid(), date: daysAgo(4), kind: "or", client: "Ousmane Sow", label: "Chaîne gourmette 18K · 12,1 g", total: 720000, cost: 660000, pay: "Orange Money" },
   { id: uid(), date: daysAgo(5), kind: "or", client: "Aminata Diop", label: "Alliance unie 18K · 3,1 g ×2", total: 372000, cost: 330000, pay: "Espèces" },
   { id: uid(), date: daysAgo(7), kind: "or", client: "Fatou Ndiaye", label: "Pendentif goutte 22K · 6,8 g", total: 500000, cost: 452000, pay: "Wave" },
   { id: uid(), date: daysAgo(8), kind: "divers", client: "Cheikh Guèye", label: "Loupe + acide de touche", total: 19500, cost: 9500, pay: "Espèces" },
-  { id: uid(), date: daysAgo(9), kind: "or", client: "Mamadou Fall", label: "Bague chevalière 21K · 8,4 g", total: 575000, cost: 528000, pay: "Virement" },
+  { id: uid(), date: daysAgo(9), kind: "or", client: "Mamadou Fall", label: "Bague chevalière 21K · 8,4 g", total: 575000, cost: 528000, pay: "Banque" },
   { id: uid(), date: daysAgo(1), kind: "or", client: "Aminata Diop", label: "Collier maille royale 21K · 18,2 g", total: 920000, cost: 845000, pay: "Espèces", paid: 400000 },
 ];
 
@@ -172,11 +173,15 @@ const seedPayments = seedSales.map((s) => ({
 }));
 
 const seedPurchases = [
-  { id: uid(), date: daysAgo(0), client: "Ousmane Sow", karat: 18, weight: 14.3, ppg: 54000, total: 772200, note: "Bijoux cassés" },
-  { id: uid(), date: daysAgo(2), client: "Awa Bâ", karat: 21, weight: 9.1, ppg: 63000, total: 573300, note: "Ancienne bague" },
-  { id: uid(), date: daysAgo(4), client: "Mamadou Fall", karat: 18, weight: 31.0, ppg: 54000, total: 1674000, note: "Lot débris" },
-  { id: uid(), date: daysAgo(6), client: "Fatou Ndiaye", karat: 22, weight: 5.5, ppg: 66000, total: 363000, note: "Chaîne héritage" },
+  { id: uid(), date: daysAgo(0), client: "Ousmane Sow", karat: 18, weight: 14.3, ppg: 54000, total: 772200, pay: "Espèces", note: "Bijoux cassés" },
+  { id: uid(), date: daysAgo(2), client: "Awa Bâ", karat: 21, weight: 9.1, ppg: 63000, total: 573300, pay: "Espèces", paid: 300000, note: "Ancienne bague" },
+  { id: uid(), date: daysAgo(4), client: "Mamadou Fall", karat: 18, weight: 31.0, ppg: 54000, total: 1674000, pay: "Banque", note: "Lot débris" },
+  { id: uid(), date: daysAgo(6), client: "Fatou Ndiaye", karat: 22, weight: 5.5, ppg: 66000, total: 363000, pay: "Espèces", note: "Chaîne héritage" },
 ];
+// registre des paiements d'achats : chaque rachat a au moins un paiement initial (au client)
+const seedPurchasePayments = seedPurchases.map((p) => ({
+  id: uid(), purchaseId: p.id, date: p.date, time: "", amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces",
+}));
 
 const seedClosures = [
   { id: uid(), date: daysAgo(1), time: "19:42", fond: 100000, esp: 505000, wave: 0, om: 0, vir: 0, caTotal: 505000, rachats: 0, depenses: 0, theorique: 605000, compte: 603000, ecart: -2000 },
@@ -185,7 +190,7 @@ const seedClosures = [
 const seedExpenses = [
   { id: uid(), date: daysAgo(0), label: "Transport approvisionnement", cat: "Transport", amount: 8000, pay: "Espèces" },
   { id: uid(), date: daysAgo(2), label: "Facture électricité", cat: "Électricité", amount: 45000, pay: "Orange Money" },
-  { id: uid(), date: daysAgo(5), label: "Loyer boutique (mois)", cat: "Loyer", amount: 250000, pay: "Virement" },
+  { id: uid(), date: daysAgo(5), label: "Loyer boutique (mois)", cat: "Loyer", amount: 250000, pay: "Banque" },
   { id: uid(), date: daysAgo(6), label: "Salaire apprenti", cat: "Salaire", amount: 120000, pay: "Espèces" },
 ];
 
@@ -312,7 +317,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
           <Field label="Prix / g (cours du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} /></Field>
           <Field label="Façon / main d'œuvre"><input className="input num" type="number" value={facon} onChange={(e) => setFacon(e.target.value)} placeholder="0" /></Field>
           <Field label="Paiement">
-            <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{["Espèces", "Wave", "Orange Money", "Virement"].map((p) => <option key={p}>{p}</option>)}</select>
+            <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
           </Field>
         </div>
       ) : (
@@ -325,7 +330,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
           </Field>
           <Field label="Quantité"><input className="input num" type="number" min="1" value={dQty} onChange={(e) => setDQty(e.target.value)} /></Field>
           <Field label="Paiement">
-            <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{["Espèces", "Wave", "Orange Money", "Virement"].map((p) => <option key={p}>{p}</option>)}</select>
+            <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
           </Field>
         </div>
       )}
@@ -349,6 +354,7 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
   const [weight, setWeight] = useState("");
   const [ppg, setPpg] = useState(Math.round(prices[18].achat));
   const [note, setNote] = useState("");
+  const [pay, setPay] = useState("Espèces");
   const [paidNow, setPaidNow] = useState("");
   const onKarat = (k) => { setKarat(k); setPpg(Math.round(prices[k].achat)); };
   const total = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0);
@@ -361,7 +367,7 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
         <div className="foot-total">À payer <strong className="num">{fcfa(total)}</strong></div>
         <div className="foot-actions">
           <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, weight: parseFloat(weight), ppg: parseFloat(ppg), total, paid, note })}>Enregistrer & ajouter au stock</button>
+          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, weight: parseFloat(weight), ppg: parseFloat(ppg), total, paid, pay, note })}>Enregistrer & ajouter au stock</button>
         </div>
       </>}>
       <div className="grid2">
@@ -375,9 +381,14 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
           <datalist id="cl-list2">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
         </Field>
       </div>
-      <Field label="Montant payé maintenant">
-        <input className="input num" type="number" value={paidNow} onChange={(e) => setPaidNow(e.target.value)} placeholder={`${nf.format(Math.round(total))} (payé en totalité)`} />
-      </Field>
+      <div className="grid2">
+        <Field label="Montant payé maintenant">
+          <input className="input num" type="number" value={paidNow} onChange={(e) => setPaidNow(e.target.value)} placeholder={`${nf.format(Math.round(total))} (payé en totalité)`} />
+        </Field>
+        <Field label="Moyen de paiement">
+          <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
+        </Field>
+      </div>
       {reste > 0 && <div className="credit-note">Rachat partiellement payé · reste à payer au client : <strong className="num">{fcfa(reste)}</strong>{client ? "" : " — pense à indiquer le client"}</div>}
       <Field label="Note"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ex : bijoux cassés, héritage…" /></Field>
     </Modal>
@@ -459,7 +470,7 @@ function ExpenseModal({ item, onClose, onSave }) {
         </Field>
         <Field label="Montant"><input className="input num" type="number" value={f.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" /></Field>
         <Field label="Paiement">
-          <select className="input" value={f.pay} onChange={(e) => set("pay", e.target.value)}>{["Espèces", "Wave", "Orange Money", "Virement"].map((p) => <option key={p}>{p}</option>)}</select>
+          <select className="input" value={f.pay} onChange={(e) => set("pay", e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
         </Field>
       </div>
     </Modal>
@@ -869,7 +880,7 @@ function ZCard({ data, shop }) {
         <ZRow label="Espèces" value={fcfa(data.esp)} />
         <ZRow label="Wave" value={fcfa(data.wave)} />
         <ZRow label="Orange Money" value={fcfa(data.om)} />
-        <ZRow label="Virement" value={fcfa(data.vir)} />
+        <ZRow label="Banque" value={fcfa(data.vir)} />
       </div>
       <div className="rc-sep" />
       <div className="rc-total"><span>TOTAL VENTES</span><strong className="num">{fcfa(data.caTotal)}</strong></div>
@@ -917,7 +928,31 @@ function AcompteModal({ sale, balance, onClose, onSave }) {
       <div className="grid2">
         <Field label="Montant reçu"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field label="Paiement">
-          <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{["Espèces", "Wave", "Orange Money", "Virement"].map((p) => <option key={p}>{p}</option>)}</select>
+          <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+function SettlePurchaseModal({ purchase, balance, onClose, onSave }) {
+  const [amount, setAmount] = useState(Math.round(balance));
+  const [pay, setPay] = useState("Espèces");
+  const a = Math.min(parseFloat(amount) || 0, balance);
+  const restant = balance - a;
+  return (
+    <Modal title="Payer le reste au client" sub={`Rachat ${purchase.karat}K · ${g(purchase.weight)}`} onClose={onClose}
+      footer={<>
+        <div className="foot-total">Restera <strong className="num">{fcfa(restant)}</strong></div>
+        <div className="foot-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+          <button className="btn btn-clay" disabled={a <= 0} onClick={() => onSave({ amount: a, pay })}>Payer</button>
+        </div>
+      </>}>
+      <div className="recon-row total" style={{ borderTop: "none" }}><span>Reste à payer</span><span className="num">{fcfa(balance)}</span></div>
+      <div className="grid2">
+        <Field label="Montant payé"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Moyen de paiement">
+          <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
         </Field>
       </div>
     </Modal>
@@ -931,6 +966,7 @@ export default function App() {
   const [clients, setClients] = useState(seedClients);
   const [sales, setSales] = useState(seedSales);
   const [purchases, setPurchases] = useState(seedPurchases);
+  const [purchasePayments, setPurchasePayments] = useState(seedPurchasePayments);
   const [modal, setModal] = useState(null);
   const [stockTab, setStockTab] = useState("or");
   const [q, setQ] = useState("");
@@ -950,6 +986,7 @@ export default function App() {
   const [resellerPhone, setResellerPhone] = useState("");
   const [trialUsed, setTrialUsed] = useState(false);
   const [acompteFor, setAcompteFor] = useState(null);
+  const [settleFor, setSettleFor] = useState(null);
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -1046,6 +1083,7 @@ export default function App() {
           if (d.clients) setClients(d.clients);
           if (d.sales) setSales(d.sales);
           if (d.purchases) setPurchases(d.purchases);
+          if (d.purchasePayments) setPurchasePayments(d.purchasePayments);
           if (d.closures) setClosures(d.closures);
           if (d.payments) setPayments(d.payments);
           if (d.expenses) setExpenses(d.expenses);
@@ -1088,19 +1126,19 @@ export default function App() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await STORE.set("atelierdor:data", JSON.stringify({
-        gold, divers, clients, sales, purchases, closures, payments, expenses, users,
+        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users,
         settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
       }));
       setSaveState(ok ? "saved" : "error");
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, gold, divers, clients, sales, purchases, closures, payments, expenses, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
     await STORE.del("atelierdor:data");
     setGold(seedGold); setDivers(seedDivers); setClients(seedClients);
-    setSales(seedSales); setPurchases(seedPurchases); setClosures(seedClosures); setPayments(seedPayments); setExpenses(seedExpenses); setUsers(seedUsers);
+    setSales(seedSales); setPurchases(seedPurchases); setPurchasePayments(seedPurchasePayments); setClosures(seedClosures); setPayments(seedPayments); setExpenses(seedExpenses); setUsers(seedUsers);
     setPrime(3); setMVente(8); setMAchat(4); setFondCaisse(100000);
     setShop({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
   };
@@ -1124,10 +1162,9 @@ export default function App() {
     const stockOrWeight = gold.reduce((s, it) => s + it.weight * it.qty, 0);
     const stockDiversValue = divers.reduce((s, it) => s + it.price * it.qty, 0);
     const totalVentes = sales.reduce((s, x) => s + x.total, 0);
-    const purchasePaidOf = (x) => (x.paid != null ? x.paid : x.total);
     const totalAchats = purchases.reduce((s, x) => s + x.total, 0);
-    const totalAchatsPaye = purchases.reduce((s, x) => s + purchasePaidOf(x), 0);
-    const dettesAchats = purchases.reduce((s, x) => s + Math.max(0, x.total - purchasePaidOf(x)), 0);
+    const totalAchatsPaye = purchasePayments.reduce((s, x) => s + x.amount, 0);
+    const dettesAchats = purchases.reduce((s, x) => s + Math.max(0, x.total - purchasePayments.filter((pp) => pp.purchaseId === x.id).reduce((a, b) => a + b.amount, 0)), 0);
     const totalEncaisse = payments.reduce((s, x) => s + x.amount, 0);
     const creances = sales.reduce((s, x) => s + Math.max(0, x.total - payments.filter((p) => p.saleId === x.id).reduce((a, b) => a + b.amount, 0)), 0);
     const tresorerie = INITIAL_CASH + totalEncaisse - totalAchatsPaye;
@@ -1138,7 +1175,7 @@ export default function App() {
     const achatsJour = purchases.filter((x) => x.date === TODAY).reduce((s, x) => s + x.total, 0);
     const lowStock = divers.filter((it) => it.qty <= it.min);
     return { stockOrValue, stockOrWeight, stockDiversValue, totalVentes, totalAchats, totalAchatsPaye, dettesAchats, tresorerie, beneficeVentes, depensesTotal, beneficeNet, ventesJour, achatsJour, lowStock, creances };
-  }, [gold, divers, sales, purchases, payments, expenses, prices]);
+  }, [gold, divers, sales, purchases, payments, purchasePayments, expenses, prices]);
 
   const dailySeries = useMemo(() => {
     const days = [];
@@ -1164,6 +1201,8 @@ export default function App() {
   const me = () => (currentUser ? currentUser.name : "—");
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
+  const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
+  const purchaseBalance = (p) => p.total - purchasePaidFor(p.id);
   const ensureClient = (name) => { if (name && !clients.find((c) => c.name === name)) setClients((c) => [...c, { id: uid(), name, phone: "", note: "" }]); };
   const addSale = (s) => {
     ensureClient(s.client);
@@ -1183,9 +1222,14 @@ export default function App() {
     ensureClient(p.client);
     const rec = { id: uid(), date: TODAY, time: nowTime(), no: "A" + Date.now().toString(36).slice(-5).toUpperCase(), kind: "purchase", by: me(), ...p };
     setPurchases((arr) => [rec, ...arr]);
+    setPurchasePayments((arr) => [{ id: uid(), purchaseId: rec.id, date: TODAY, time: rec.time, amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces", by: me() }, ...arr]);
     setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}`, karat: p.karat, weight: p.weight, qty: 1 }, ...arr]);
     setModal(null);
     setReceipt(buildReceipt(rec));
+  };
+  const settlePurchase = (purchase, { amount, pay }) => {
+    setPurchasePayments((arr) => [{ id: uid(), purchaseId: purchase.id, date: TODAY, time: nowTime(), amount, pay, by: me() }, ...arr]);
+    setSettleFor(null);
   };
   const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
   const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
@@ -1242,7 +1286,7 @@ export default function App() {
 
   const buildBackupJson = () => JSON.stringify({
     _app: "AtelierDor", _exportedAt: new Date().toISOString(),
-    gold, divers, clients, sales, purchases, closures, payments, expenses, users,
+    gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users,
     settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
   }, null, 2);
 
@@ -1252,6 +1296,7 @@ export default function App() {
     if (d.clients) setClients(d.clients);
     if (d.sales) setSales(d.sales);
     if (d.purchases) setPurchases(d.purchases);
+    if (d.purchasePayments) setPurchasePayments(d.purchasePayments);
     if (d.closures) setClosures(d.closures);
     if (d.payments) setPayments(d.payments);
     if (d.expenses) setExpenses(d.expenses);
@@ -1275,7 +1320,7 @@ export default function App() {
     { id: "buy", label: "Achats d'or", icon: ArrowDownLeft },
     { id: "stock", label: "Stock", icon: Package },
     { id: "clients", label: "Clients", icon: Users },
-    { id: "credits", label: "Crédits clients", icon: Receipt },
+    { id: "credits", label: "Crédits & dettes", icon: Receipt },
     { id: "caisse", label: "Clôture de caisse", icon: Banknote },
     { id: "depenses", label: "Dépenses", icon: TrendingDown },
     { id: "equipe", label: "Équipe", icon: ShieldCheck },
@@ -1403,7 +1448,9 @@ export default function App() {
       <table className="table">
         <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th className="r">Payé</th><th></th></tr></thead>
         <tbody>
-          {purchases.map((p) => (
+          {purchases.map((p) => {
+            const bal = purchaseBalance(p);
+            return (
             <tr key={p.id}>
               <td className="num">{dateFr(p.date)}</td>
               <td>{p.client || "—"}</td>
@@ -1412,12 +1459,16 @@ export default function App() {
               <td className="r num">{fcfa(p.ppg)}</td>
               <td className="muted">{p.note}</td>
               <td className="r num neg">
-                −{fcfa(p.paid != null ? p.paid : p.total)}
-                {p.paid != null && p.total - p.paid > 0 && <div className="mini-warn">reste {fcfa(p.total - p.paid)}</div>}
+                −{fcfa(purchasePaidFor(p.id))}
+                {bal > 0 && <div className="mini-warn">reste {fcfa(bal)}</div>}
               </td>
-              <td className="r"><button className="icon-btn" title="Voir le bordereau" onClick={() => setReceipt(buildReceipt({ ...p, kind: "purchase" }))}><Receipt size={15} /></button></td>
+              <td className="r"><div className="rowbtns">
+                {bal > 0 && <button className="btn btn-xs btn-clay" onClick={() => setSettleFor(p)}>Solder</button>}
+                <button className="icon-btn" title="Voir le bordereau" onClick={() => setReceipt(buildReceipt({ ...p, paid: purchasePaidFor(p.id), kind: "purchase" }))}><Receipt size={15} /></button>
+              </div></td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1517,15 +1568,16 @@ export default function App() {
 
   const renderCredits = () => {
     const credits = sales.map((s) => ({ s, bal: balanceFor(s) })).filter((x) => x.bal > 0);
+    const dettes = purchases.map((p) => ({ p, bal: purchaseBalance(p) })).filter((x) => x.bal > 0);
     return (
       <>
         <div className="kpis">
-          <Kpi icon={Receipt} label="Total des créances" value={fcfa(m.creances)} sub="argent à recouvrer" tone="clay" />
-          <Kpi icon={Users} label="Crédits en cours" value={String(credits.length)} sub="ventes non soldées" tone="gold" />
-          <Kpi icon={Wallet} label="Trésorerie" value={fcfa(m.tresorerie)} sub="encaissé − rachats" tone="green" />
+          <Kpi icon={Receipt} label="Total des créances" value={fcfa(m.creances)} sub="clients qui te doivent" tone="clay" />
+          <Kpi icon={ArrowDownLeft} label="Restes à payer" value={fcfa(m.dettesAchats)} sub="que tu dois aux clients" tone="gold" />
+          <Kpi icon={Wallet} label="Trésorerie" value={fcfa(m.tresorerie)} sub="encaissé − rachats payés" tone="green" />
         </div>
         <div className="card">
-          <div className="card-head"><h3>Ventes à crédit <span className="count">{credits.length}</span></h3></div>
+          <div className="card-head"><h3>Ventes à crédit <span className="count">{credits.length}</span></h3><span className="muted">argent à recouvrer</span></div>
           {credits.length === 0 ? (
             <p className="muted small">Aucune créance en cours. Toutes les ventes sont soldées.</p>
           ) : (
@@ -1547,6 +1599,29 @@ export default function App() {
             </table>
           )}
         </div>
+        <div className="card">
+          <div className="card-head"><h3>Restes à payer aux clients <span className="count">{dettes.length}</span></h3><span className="muted">rachats non soldés</span></div>
+          {dettes.length === 0 ? (
+            <p className="muted small">Aucun reste à payer. Tous les rachats sont soldés.</p>
+          ) : (
+            <table className="table">
+              <thead><tr><th>Date</th><th>Client</th><th>Détail</th><th className="r">Total</th><th className="r">Payé</th><th className="r">Reste à payer</th><th></th></tr></thead>
+              <tbody>
+                {dettes.map(({ p, bal }) => (
+                  <tr key={p.id}>
+                    <td className="num">{dateFr(p.date)}</td>
+                    <td>{p.client || "—"}</td>
+                    <td>Rachat {p.karat}K · {g(p.weight)}</td>
+                    <td className="r num">{fcfa(p.total)}</td>
+                    <td className="r num">{fcfa(p.total - bal)}</td>
+                    <td className="r num neg"><strong>{fcfa(bal)}</strong></td>
+                    <td className="r"><button className="btn btn-clay btn-xs" onClick={() => setSettleFor(p)}>Payer</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </>
     );
   };
@@ -1555,10 +1630,10 @@ export default function App() {
     const todaySales = sales.filter((s) => s.date === TODAY);
     const todayPays = payments.filter((p) => p.date === TODAY);
     const byPay = (m2) => todayPays.filter((p) => p.pay === m2).reduce((a, b) => a + b.amount, 0);
-    const esp = byPay("Espèces"), wave = byPay("Wave"), om = byPay("Orange Money"), vir = byPay("Virement");
+    const esp = byPay("Espèces"), wave = byPay("Wave"), om = byPay("Orange Money"), vir = byPay("Banque");
     const encTotal = todayPays.reduce((a, b) => a + b.amount, 0);
     const caTotal = todaySales.reduce((a, b) => a + b.total, 0);
-    const rachats = purchases.filter((p) => p.date === TODAY).reduce((a, b) => a + (b.paid != null ? b.paid : b.total), 0);
+    const rachats = purchasePayments.filter((p) => p.date === TODAY && p.pay === "Espèces").reduce((a, b) => a + b.amount, 0);
     const depenses = expenses.filter((e) => e.date === TODAY && e.pay === "Espèces").reduce((a, b) => a + b.amount, 0);
     const theorique = fondCaisse + esp - rachats - depenses;
     const compte = parseFloat(compteCaisse) || 0;
@@ -1590,7 +1665,7 @@ export default function App() {
                 <tr><td>Espèces</td><td className="r num">{fcfa(esp)}</td></tr>
                 <tr><td>Wave</td><td className="r num">{fcfa(wave)}</td></tr>
                 <tr><td>Orange Money</td><td className="r num">{fcfa(om)}</td></tr>
-                <tr><td>Virement</td><td className="r num">{fcfa(vir)}</td></tr>
+                <tr><td>Banque</td><td className="r num">{fcfa(vir)}</td></tr>
                 <tr><td><strong>Total encaissé</strong></td><td className="r num pos"><strong>{fcfa(encTotal)}</strong></td></tr>
                 <tr><td className="muted small">Valeur vendue (CA du jour)</td><td className="r num muted small">{fcfa(caTotal)}</td></tr>
               </tbody>
@@ -1925,7 +2000,7 @@ export default function App() {
   };
 
   const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, abo: renderAbo };
-  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits clients", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", abo: "Abonnement" };
+  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", abo: "Abonnement" };
 
   if (route === "admin") {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
@@ -2016,6 +2091,7 @@ export default function App() {
       {receipt && <ReceiptModal data={receipt} shop={shop} onClose={() => setReceipt(null)} />}
       {zView && <ZModal data={zView} shop={shop} onClose={() => setZView(null)} />}
       {acompteFor && <AcompteModal sale={acompteFor} balance={balanceFor(acompteFor)} onClose={() => setAcompteFor(null)} onSave={(p) => recordPayment(acompteFor, p)} />}
+      {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
     </div>
