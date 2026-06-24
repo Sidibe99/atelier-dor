@@ -554,27 +554,44 @@ function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed })
   };
   return (
     <div className="lock activate-scroll">
-      <div className="lock-brand"><div className="brand-mark lg">Au</div><div className="lock-title">Atelier d'Or</div><div className="lock-sub">{trialUsed ? "Ton essai est terminé" : "Activation"}</div></div>
-      {trialUsed && <div className="trial-over">Ton essai gratuit de 7 jours est terminé. Choisis une formule pour continuer — ton revendeur sera prévenu.</div>}
-      <div className="formulas">
-        {PAID_FORMULAS.map((k) => {
-          const f = FORMULAS[k];
-          return (
-            <div className="formula" key={k}>
-              <div className="formula-top"><span className="formula-name">{f.name}</span><span className="formula-price">{f.priceLabel}</span></div>
-              <ul className="formula-feats">{f.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
-              <button className="btn btn-gold formula-btn" onClick={() => onChoose(k)}>Choisir {f.name}</button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="act-box">
-        {!trialUsed && (<><button className="btn btn-line act-btn" onClick={onTrial}>Démarrer l'essai gratuit (7 j)</button><div className="act-or">— ou, si tu as déjà un code —</div></>)}
-        {trialUsed && <p className="lock-q">J'ai reçu un code de mon revendeur</p>}
-        <input className="act-input num" value={code} onChange={(e) => { setCode(e.target.value); setErr(""); }} placeholder="AOR-X-XXXX-XXXX" onKeyDown={(e) => e.key === "Enter" && submit()} />
-        {err && <p className="lock-err">{err}</p>}
-        <button className="btn btn-gold act-btn" onClick={submit}>Activer</button>
-      </div>
+      <div className="lock-brand"><div className="brand-mark lg">Au</div><div className="lock-title">Atelier d'Or</div><div className="lock-sub">{trialUsed ? "Essai terminé" : "Bienvenue"}</div></div>
+
+      {trialUsed ? (
+        <>
+          <div className="trial-over">
+            <strong>Ton essai gratuit de 7 jours est terminé.</strong>
+            <span>L'application est bloquée. Choisis une formule pour continuer — ton revendeur sera prévenu et t'enverra un code d'activation.</span>
+          </div>
+          <div className="formulas">
+            {PAID_FORMULAS.map((k) => {
+              const f = FORMULAS[k];
+              return (
+                <div className="formula" key={k}>
+                  <div className="formula-top"><span className="formula-name">{f.name}</span><span className="formula-price">{f.priceLabel}</span></div>
+                  <ul className="formula-feats">{f.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                  <button className="btn btn-gold formula-btn" onClick={() => onChoose(k)}>Choisir {f.name}</button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="act-box">
+            <p className="lock-q">J'ai reçu un code de mon revendeur</p>
+            <input className="act-input num" value={code} onChange={(e) => { setCode(e.target.value); setErr(""); }} placeholder="AOR-X-XXXX-XXXX" onKeyDown={(e) => e.key === "Enter" && submit()} />
+            {err && <p className="lock-err">{err}</p>}
+            <button className="btn btn-gold act-btn" onClick={submit}>Activer</button>
+          </div>
+        </>
+      ) : (
+        <div className="act-box">
+          <p className="lock-intro">Teste gratuitement l'application pendant 7 jours, sans engagement.</p>
+          <button className="btn btn-gold act-btn" onClick={onTrial}>Démarrer l'essai gratuit (7 jours)</button>
+          <div className="act-or">— ou, si tu as déjà un code —</div>
+          <input className="act-input num" value={code} onChange={(e) => { setCode(e.target.value); setErr(""); }} placeholder="AOR-X-XXXX-XXXX" onKeyDown={(e) => e.key === "Enter" && submit()} />
+          {err && <p className="lock-err">{err}</p>}
+          <button className="btn btn-line act-btn" onClick={submit}>Activer avec un code</button>
+        </div>
+      )}
+
       <button className="editor-link" onClick={onAdmin}>Espace éditeur</button>
     </div>
   );
@@ -1254,12 +1271,20 @@ export default function App() {
     { id: "equipe", label: "Équipe", icon: ShieldCheck },
     { id: "reports", label: "Rapports", icon: BarChart3 },
     { id: "cours", label: "Cours de l'or", icon: Coins },
+    { id: "abo", label: "Abonnement", icon: Wallet },
   ];
   const go = (id) => { setView(id); setNavOpen(false); };
   const PIE = ["#b8862f", "#d9a441", "#8a6520", "#caa45e", "#6e4f1c"];
 
   const renderDash = () => (
     <>
+      {license && license.plan === "E" && (
+        <button className="trial-banner" onClick={() => go("abo")}>
+          <span className="trial-banner-dot" />
+          <span>Essai gratuit — {planDaysLeft()} jour{planDaysLeft() > 1 ? "s" : ""} restant{planDaysLeft() > 1 ? "s" : ""}. Voir les formules et passer à un abonnement</span>
+          <span className="trial-banner-arr">→</span>
+        </button>
+      )}
       <div className="kpis">
         <Kpi icon={Coins} label="Valeur du stock or" value={fcfa(m.stockOrValue)} sub={`${g(m.stockOrWeight)} · au cours du jour`} tone="gold" />
         <Kpi icon={Wallet} label="Trésorerie" value={fcfa(m.tresorerie)} sub="caisse + mobile money" tone="green" />
@@ -1845,8 +1870,49 @@ export default function App() {
     </>
   );
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours };
-  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits clients", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or" };
+  const planDaysLeft = () => {
+    if (!license || license.lifetime || !license.expiry) return null;
+    return Math.max(0, Math.ceil((new Date(license.expiry).getTime() - Date.now()) / DAY));
+  };
+  const renderAbo = () => {
+    const f = license ? FORMULAS[license.plan] : null;
+    const left = planDaysLeft();
+    return (
+      <>
+        {f && (
+          <div className="card lic-card">
+            <div className="card-head"><h3>Mon forfait</h3><span className={`pill ${f.trial ? "pill-ink" : "pill-gold"}`}>{f.name}</span></div>
+            <p className="muted small" style={{ margin: "0 0 4px" }}>
+              {license.lifetime ? "Sans expiration" : (left != null ? `${left} jour${left > 1 ? "s" : ""} restant${left > 1 ? "s" : ""} · expire le ${dateFull(new Date(license.expiry))}` : "")}
+            </p>
+            <p className="muted small" style={{ margin: 0 }}>
+              {f.admins >= 99 ? "Admins illimités" : `${f.admins} admin${f.admins > 1 ? "s" : ""}`} · {f.users >= 99 ? "utilisateurs illimités" : `${f.users} utilisateurs`}
+            </p>
+            {f.trial && <p className="muted small" style={{ marginTop: 8 }}>Tu es en essai gratuit. Choisis une formule ci-dessous pour continuer après l'essai — ton revendeur sera prévenu.</p>}
+          </div>
+        )}
+        <div className="formulas-grid">
+          {PAID_FORMULAS.map((k) => {
+            const ff = FORMULAS[k];
+            const current = license && license.plan === k;
+            return (
+              <div className={`formula ${current ? "formula-current" : ""}`} key={k}>
+                <div className="formula-top"><span className="formula-name">{ff.name}</span><span className="formula-price">{ff.priceLabel}</span></div>
+                <ul className="formula-feats">{ff.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                {current
+                  ? <button className="btn btn-line formula-btn" disabled>Formule actuelle</button>
+                  : <button className="btn btn-gold formula-btn" onClick={() => chooseFormula(k)}>Choisir {ff.name}</button>}
+              </div>
+            );
+          })}
+        </div>
+        <p className="src-note">En choisissant une formule, un message prérempli part vers ton revendeur (WhatsApp) avec le nom de ta boutique. Il t'enverra ensuite un code d'activation.</p>
+      </>
+    );
+  };
+
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, abo: renderAbo };
+  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits clients", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", abo: "Abonnement" };
 
   if (route === "admin") {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
@@ -1861,7 +1927,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "reports"].includes(n.id));
+  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "reports", "abo"].includes(n.id));
   const cur = navItems.some((n) => n.id === view) ? view : "dash";
 
   return (
@@ -2189,8 +2255,19 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .formula-feats li { font-size:12.5px; color:var(--muted); padding-left:16px; position:relative; }
 .formula-feats li::before { content:"✓"; position:absolute; left:0; color:var(--green); font-weight:700; }
 .formula-btn { width:100%; justify-content:center; }
-.trial-over { width:100%; max-width:360px; background:var(--gold-soft); border:1px solid var(--gold); color:var(--ink); border-radius:12px; padding:12px 14px; font-size:13px; margin-bottom:16px; text-align:center; }
+.trial-over { width:100%; max-width:360px; background:var(--gold-soft); border:1px solid var(--gold); color:var(--ink); border-radius:12px; padding:14px 16px; font-size:13px; margin-bottom:16px; text-align:center; display:flex; flex-direction:column; gap:6px; }
+.trial-over strong { font-size:14px; }
+.lock-intro { text-align:center; font-size:13.5px; color:var(--muted); margin:0 0 4px; }
 .act-or { text-align:center; font-size:12px; color:var(--muted); margin:10px 0; }
+.formulas-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+.formula-current { border-color:var(--gold); background:var(--gold-soft); }
+.trial-banner { width:100%; display:flex; align-items:center; gap:10px; margin-bottom:16px; padding:12px 16px;
+  background:linear-gradient(100deg, var(--gold-soft), #fffefb); border:1px solid var(--gold); border-radius:12px;
+  color:var(--ink); font-size:13.5px; text-align:left; cursor:pointer; font-family:inherit; }
+.trial-banner:hover { box-shadow:0 4px 14px rgba(184,134,47,.18); }
+.trial-banner-dot { width:9px; height:9px; border-radius:50%; background:var(--gold); flex:none; }
+.trial-banner span:nth-child(2) { flex:1; }
+.trial-banner-arr { font-weight:700; color:var(--gold); }
 .cfg-sep { height:1px; background:var(--line); margin:14px 0; }
 .admin-flash { max-width:1000px; margin:0 auto 14px; background:var(--green-soft); border:1px solid #bcd3c2; color:var(--green); border-radius:10px; padding:10px 14px; font-size:13px; }
 .lic-card { border-color:var(--gold); background:linear-gradient(180deg,var(--gold-soft),#fffefb); }
@@ -2233,7 +2310,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .act-input::placeholder { color:#7d7160; letter-spacing:0; }
 .act-input:focus { border-color:var(--gold2); }
 .act-btn { width:100%; justify-content:center; margin-top:12px; }
-.editor-link { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:none; border:0; color:#6b6051; font:inherit; font-size:12px; cursor:pointer; }
+.editor-link { margin:22px auto 8px; display:block; background:none; border:0; color:#6b6051; font:inherit; font-size:12px; cursor:pointer; }
 .editor-link:hover { color:#a99c84; text-decoration:underline; }
 .admin { min-height:100vh; background:var(--paper); padding:20px; max-width:1000px; margin:0 auto; }
 .admin-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
