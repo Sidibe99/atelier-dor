@@ -502,7 +502,45 @@ function UserModal({ item, onClose, onSave }) {
   );
 }
 
-function LockScreen({ users, onUnlock, openAdmin }) {
+function BrandMark({ logo, lg, fallback = "Au" }) {
+  if (logo) return <div className={`brand-mark ${lg ? "lg" : ""} has-logo`}><img src={logo} alt="" /></div>;
+  return <div className={`brand-mark ${lg ? "lg" : ""}`}>{fallback}</div>;
+}
+function readLogo(file, cb) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 256;
+      let w = img.width, h = img.height;
+      if (w > max || h > max) { const r = Math.min(max / w, max / h); w = Math.round(w * r); h = Math.round(h * r); }
+      try {
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        cb(c.toDataURL("image/png"));
+      } catch (e) { cb(String(reader.result)); }
+    };
+    img.onerror = () => cb(String(reader.result));
+    img.src = String(reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+function LogoField({ logo, onChange }) {
+  const ref = useRef(null);
+  return (
+    <div className="logo-field">
+      <div className="logo-preview">{logo ? <img src={logo} alt="logo" /> : <span>Au</span>}</div>
+      <div className="logo-actions">
+        <button type="button" className="btn btn-line btn-xs" onClick={() => ref.current && ref.current.click()}>{logo ? "Changer le logo" : "Choisir un logo"}</button>
+        {logo && <button type="button" className="btn btn-line btn-xs danger" onClick={() => onChange("")}>Retirer</button>}
+        <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { readLogo(e.target.files && e.target.files[0], onChange); e.target.value = ""; }} />
+      </div>
+    </div>
+  );
+}
+
+function LockScreen({ users, onUnlock, openAdmin, logo }) {
   const [ident, setIdent] = useState("");
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState(false);
@@ -514,7 +552,7 @@ function LockScreen({ users, onUnlock, openAdmin }) {
   };
   return (
     <div className="lock">
-      <div className="lock-brand"><div className="brand-mark lg">Au</div><div className="lock-title">Atelier d'Or</div><div className="lock-sub">Connexion</div></div>
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">Connexion</div></div>
       <div className="act-box">
         <p className="lock-q">Identifie-toi pour continuer</p>
         <input className="act-input" value={ident} onChange={(e) => { setIdent(e.target.value); setErr(false); }} placeholder="Identifiant ou e-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
@@ -563,7 +601,7 @@ function BackupModal({ mode, json, onClose, onImport }) {
   );
 }
 
-function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed }) {
+function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed, logo }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const submit = () => {
@@ -572,7 +610,7 @@ function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed })
   };
   return (
     <div className="lock activate-scroll">
-      <div className="lock-brand"><div className="brand-mark lg">Au</div><div className="lock-title">Atelier d'Or</div><div className="lock-sub">{trialUsed ? "Essai terminé" : "Bienvenue"}</div></div>
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">{trialUsed ? "Essai terminé" : "Bienvenue"}</div></div>
 
       {trialUsed ? (
         <>
@@ -633,6 +671,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
   const [shopName, setShopName] = useState(shop?.name || "");
   const [shopPhone, setShopPhone] = useState(shop?.phone || "");
   const [shopAddr, setShopAddr] = useState(shop?.addr || "");
+  const [shopLogo, setShopLogo] = useState(shop?.logo || "");
   const [savedMsg, setSavedMsg] = useState("");
 
   useEffect(() => { (async () => { try { const v = await STORE.get("atelierdor:admincodes"); if (v) setLog(JSON.parse(v)); } catch (e) { /* */ } })(); }, []);
@@ -650,7 +689,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
   const runCheck = () => setCheckRes(verifyActivation(check.trim()));
   const flash = (m) => { setSavedMsg(m); setTimeout(() => setSavedMsg(""), 2000); };
   const saveReseller = () => { flash("Contact revendeur enregistré."); };
-  const saveShop = () => { setShop({ name: shopName || "Atelier d'Or", phone: shopPhone, addr: shopAddr }); flash("Boutique enregistrée sur cet appareil."); };
+  const saveShop = () => { setShop({ name: shopName || "Atelier d'Or", phone: shopPhone, addr: shopAddr, logo: shopLogo }); flash("Boutique enregistrée sur cet appareil."); };
   const savePatron = () => {
     const list = (users || []).slice();
     const idx = list.findIndex((u) => u.role === "patron");
@@ -722,6 +761,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
 
       <div className="card">
         <div className="card-head"><h3>Configurer la boutique du client</h3></div>
+        <Field label="Logo de la boutique"><LogoField logo={shopLogo} onChange={setShopLogo} /></Field>
         <p className="muted small" style={{ margin: "0 0 12px" }}>Pratique quand le client ne sait pas le faire : prépare sa boutique et son compte patron, puis remets-lui l'appareil prêt à l'emploi.</p>
         <div className="grid2">
           <Field label="Nom de la boutique"><input className="input" value={shopName} onChange={(e) => setShopName(e.target.value)} placeholder="Bijouterie Sandaga" /></Field>
@@ -807,6 +847,7 @@ function ReceiptCard({ data, shop }) {
   return (
     <div className="receipt">
       <div className="rc-head">
+        {shop.logo && <img className="rc-logo" src={shop.logo} alt="" />}
         <div className="rc-shop">{shop.name}</div>
         {shop.addr && <div className="rc-sub">{shop.addr}</div>}
         {shop.phone && <div className="rc-sub">Tél : {shop.phone}</div>}
@@ -870,6 +911,7 @@ function ZCard({ data, shop }) {
   return (
     <div className="receipt">
       <div className="rc-head">
+        {shop.logo && <img className="rc-logo" src={shop.logo} alt="" />}
         <div className="rc-shop">{shop.name}</div>
         {shop.addr && <div className="rc-sub">{shop.addr}</div>}
       </div>
@@ -1097,10 +1139,21 @@ export default function App() {
             if (d.settings.resellerPhone) setResellerPhone(d.settings.resellerPhone);
           }
         }
+        // reconnexion automatique + page mémorisée
+        try {
+          const uList = (d && d.users && d.users.length) ? d.users : seedUsers;
+          const sid = await STORE.get("atelierdor:session");
+          if (sid) { const u = uList.find((x) => x.id === sid); if (u) setCurrentUser(u); }
+          const vw = await STORE.get("atelierdor:view");
+          if (vw) setView(vw);
+        } catch (e) { /* pas de session */ }
       } catch (e) { /* aucune donnée enregistrée : on garde les exemples */ }
       finally { setLoaded(true); }
     })();
   }, []);
+
+  // mémoriser la page courante pour la rouvrir après rafraîchissement
+  useEffect(() => { if (loaded) { try { STORE.set("atelierdor:view", view); } catch (e) { /* */ } } }, [view, loaded]);
 
   // ---- routage #admin-create + vérification de la licence ----
   useEffect(() => {
@@ -1137,6 +1190,7 @@ export default function App() {
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
     await STORE.del("atelierdor:data");
+    try { await STORE.del("atelierdor:session"); await STORE.del("atelierdor:view"); } catch (e) { /* */ }
     setGold(seedGold); setDivers(seedDivers); setClients(seedClients);
     setSales(seedSales); setPurchases(seedPurchases); setPurchasePayments(seedPurchasePayments); setClosures(seedClosures); setPayments(seedPayments); setExpenses(seedExpenses); setUsers(seedUsers);
     setPrime(3); setMVente(8); setMAchat(4); setFondCaisse(100000);
@@ -1262,7 +1316,8 @@ export default function App() {
     if (users.length <= 1) { window.alert("Il faut garder au moins un utilisateur."); return; }
     if (window.confirm("Supprimer cet employé ?")) setUsers((arr) => arr.filter((x) => x.id !== id));
   };
-  const login = (u) => { setCurrentUser(u); setView("dash"); };
+  const login = (u) => { setCurrentUser(u); setView("dash"); try { STORE.set("atelierdor:session", u.id); } catch (e) { /* */ } };
+  const logout = () => { try { STORE.del("atelierdor:session"); } catch (e) { /* */ } setCurrentUser(null); setNavOpen(false); };
   const activate = (c) => {
     const v = verifyActivation(c);
     if (v.valid) { const norm = c.replace(/\s+/g, "").toUpperCase(); STORE.set("atelierdor:license", norm); setLicense({ ...v, code: norm }); }
@@ -1924,6 +1979,7 @@ export default function App() {
 
       <div className="card">
         <div className="card-head"><h3><Receipt size={15} /> Boutique (en-tête des reçus)</h3><span className="muted">Apparaît en haut de chaque ticket</span></div>
+        <Field label="Logo de la boutique"><LogoField logo={shop.logo} onChange={(v) => setShop((s) => ({ ...s, logo: v }))} /></Field>
         <Field label="Nom de la boutique"><input className="input" value={shop.name} onChange={(e) => setShop((s) => ({ ...s, name: e.target.value }))} /></Field>
         <div className="manual" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
           <Field label="Adresse"><input className="input" value={shop.addr} onChange={(e) => setShop((s) => ({ ...s, addr: e.target.value }))} placeholder="ex : Marché Sandaga, Dakar" /></Field>
@@ -2006,13 +2062,13 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
   }
   if (!licReady) {
-    return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><div className="brand-mark lg">Au</div><div className="lock-sub">Chargement…</div></div></div></div>);
+    return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
   }
   if (!license) {
-    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} trialUsed={trialUsed} /></div>);
+    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} trialUsed={trialUsed} logo={shop.logo} /></div>);
   }
   if (!currentUser) {
-    return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} /></div>);
+    return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} logo={shop.logo} /></div>);
   }
   const isPatron = currentUser.role === "patron";
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "reports", "abo"].includes(n.id));
@@ -2025,7 +2081,7 @@ export default function App() {
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">Au</div>
+          <BrandMark logo={shop.logo} />
           <div><div className="brand-name">Atelier d'Or</div><div className="brand-sub">Gestion bijouterie</div></div>
         </div>
         <nav>
@@ -2040,7 +2096,7 @@ export default function App() {
             <span className="avatar sm">{currentUser.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</span>
             <span className="side-user-main"><strong>{currentUser.name}</strong><em>{isPatron ? "Patron" : "Vendeur"}</em></span>
           </div>
-          <button className="btn logout-btn" onClick={() => { setCurrentUser(null); setNavOpen(false); }}><LogOut size={15} /> Déconnexion</button>
+          <button className="btn logout-btn" onClick={logout}><LogOut size={15} /> Déconnexion</button>
           <div className="save-ind">
             <span className={`save-dot ${saveState}`} />
             {saveState === "saving" ? "Enregistrement…" : saveState === "error" ? "Sauvegarde indisponible" : "Données enregistrées"}
@@ -2121,6 +2177,15 @@ const CSS = `
 .brand-mark { width:40px; height:40px; border-radius:10px; display:grid; place-items:center;
   background:linear-gradient(150deg,var(--gold2),var(--gold)); color:var(--ink);
   font-family:'Fraunces',serif; font-weight:700; font-size:18px; }
+.brand-mark.has-logo { background:#fff; overflow:hidden; }
+.brand-mark.has-logo img { width:100%; height:100%; object-fit:contain; }
+.logo-field { display:flex; align-items:center; gap:12px; }
+.logo-preview { width:54px; height:54px; border-radius:11px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; overflow:hidden; flex:none; }
+.logo-preview img { width:100%; height:100%; object-fit:contain; }
+.logo-preview span { font-family:'Fraunces',serif; font-weight:700; font-size:20px; color:var(--gold); }
+.logo-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.btn-line.danger { color:#9c4a35; border-color:#caa; }
+.rc-logo { display:block; max-height:54px; max-width:70%; margin:0 auto 8px; object-fit:contain; }
 .brand-name { font-family:'Fraunces',serif; font-weight:600; font-size:16px; color:#fff; }
 .brand-sub { font-size:11px; color:#a99c84; }
 nav { display:flex; flex-direction:column; gap:3px; flex:1; }
