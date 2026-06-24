@@ -24,6 +24,7 @@ const dateFr = (s) => { const [y, m, d] = s.split("-"); return `${d}/${m}/${y.sl
 const KARATS = [24, 22, 21, 18, 14];
 const OZ = 31.1034768;            // 1 once troy en grammes
 const PAY_METHODS = ["Espèces", "Wave", "Orange Money", "Banque"];
+const KIND_LABEL = { or: "Or", bijoux: "Bijoux", divers: "Divers" };
 const purity = (k) => k / 24;     // pureté (24K = or pur)
 const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée en direct)
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
@@ -154,17 +155,17 @@ const seedClients = [
 ];
 
 const seedSales = [
-  { id: uid(), date: daysAgo(0), kind: "or", client: "Aminata Diop", label: "Bracelet jonc ciselé 21K · 15,6 g", total: 1010000, cost: 930000, pay: "Wave" },
+  { id: uid(), date: daysAgo(0), kind: "bijoux", client: "Aminata Diop", label: "Bracelet jonc ciselé 21K · 15,6 g", total: 1010000, cost: 930000, pay: "Wave" },
   { id: uid(), date: daysAgo(0), kind: "divers", client: "Cheikh Guèye", label: "Fournitures (fermoirs, fil)", total: 96000, cost: 58500, pay: "Espèces" },
-  { id: uid(), date: daysAgo(1), kind: "or", client: "Fatou Ndiaye", label: "Boucles créoles 18K · 4,2 g ×2", total: 505000, cost: 460000, pay: "Espèces" },
+  { id: uid(), date: daysAgo(1), kind: "bijoux", client: "Fatou Ndiaye", label: "Boucles créoles 18K · 4,2 g ×2", total: 505000, cost: 460000, pay: "Espèces" },
   { id: uid(), date: daysAgo(2), kind: "or", client: "Mamadou Fall", label: "Lingotin 10 g 24K", total: 800000, cost: 750000, pay: "Banque" },
   { id: uid(), date: daysAgo(3), kind: "divers", client: "Awa Bâ", label: "Écrins + pochettes", total: 14000, cost: 5400, pay: "Espèces" },
-  { id: uid(), date: daysAgo(4), kind: "or", client: "Ousmane Sow", label: "Chaîne gourmette 18K · 12,1 g", total: 720000, cost: 660000, pay: "Orange Money" },
-  { id: uid(), date: daysAgo(5), kind: "or", client: "Aminata Diop", label: "Alliance unie 18K · 3,1 g ×2", total: 372000, cost: 330000, pay: "Espèces" },
-  { id: uid(), date: daysAgo(7), kind: "or", client: "Fatou Ndiaye", label: "Pendentif goutte 22K · 6,8 g", total: 500000, cost: 452000, pay: "Wave" },
+  { id: uid(), date: daysAgo(4), kind: "bijoux", client: "Ousmane Sow", label: "Chaîne gourmette 18K · 12,1 g", total: 720000, cost: 660000, pay: "Orange Money" },
+  { id: uid(), date: daysAgo(5), kind: "bijoux", client: "Aminata Diop", label: "Alliance unie 18K · 3,1 g ×2", total: 372000, cost: 330000, pay: "Espèces" },
+  { id: uid(), date: daysAgo(7), kind: "bijoux", client: "Fatou Ndiaye", label: "Pendentif goutte 22K · 6,8 g", total: 500000, cost: 452000, pay: "Wave" },
   { id: uid(), date: daysAgo(8), kind: "divers", client: "Cheikh Guèye", label: "Loupe + acide de touche", total: 19500, cost: 9500, pay: "Espèces" },
-  { id: uid(), date: daysAgo(9), kind: "or", client: "Mamadou Fall", label: "Bague chevalière 21K · 8,4 g", total: 575000, cost: 528000, pay: "Banque" },
-  { id: uid(), date: daysAgo(1), kind: "or", client: "Aminata Diop", label: "Collier maille royale 21K · 18,2 g", total: 920000, cost: 845000, pay: "Espèces", paid: 400000 },
+  { id: uid(), date: daysAgo(9), kind: "bijoux", client: "Mamadou Fall", label: "Bague chevalière 21K · 8,4 g", total: 575000, cost: 528000, pay: "Banque" },
+  { id: uid(), date: daysAgo(1), kind: "bijoux", client: "Aminata Diop", label: "Collier maille royale 21K · 18,2 g", total: 920000, cost: 845000, pay: "Espèces", paid: 400000 },
 ];
 
 // registre des paiements : chaque vente a au moins un encaissement (le paiement initial)
@@ -250,6 +251,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
   const [dId, setDId] = useState("");
   const [dQty, setDQty] = useState(1);
   const [paidNow, setPaidNow] = useState("");
+  const isGold = kind === "or" || kind === "bijoux";
 
   const onPickStock = (id) => {
     setStockId(id);
@@ -258,24 +260,26 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
   };
   const onKarat = (k) => { setKarat(k); setPpg(Math.round(prices[k].vente)); };
 
-  const orTotal = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0) + (parseFloat(facon) || 0);
+  const faconV = kind === "bijoux" ? (parseFloat(facon) || 0) : 0;
+  const orTotal = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0) + faconV;
   const dItem = divers.find((x) => x.id === dId);
   const dTotal = dItem ? dItem.price * (parseInt(dQty) || 0) : 0;
-  const total = kind === "or" ? orTotal : dTotal;
-  const valid = kind === "or" ? weight && ppg : dItem && dQty > 0;
+  const total = isGold ? orTotal : dTotal;
+  const valid = isGold ? weight && ppg : dItem && dQty > 0;
   const paid = paidNow === "" ? total : Math.min(parseFloat(paidNow) || 0, total);
   const reste = total - paid;
 
   const save = () => {
     if (!valid) return;
-    if (kind === "or") {
+    if (isGold) {
       const it = gold.find((x) => x.id === stockId);
       const cost = (parseFloat(weight) || 0) * prices[karat].achat;
+      const defType = kind === "bijoux" ? "Bijou" : "Or";
       onSave({
-        kind: "or", client, pay, total: orTotal, cost, stockId, paid,
-        label: `${it ? it.type : "Or"} ${karat}K · ${g(parseFloat(weight))}`,
-        karat, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: parseFloat(facon) || 0,
-        itemType: it ? it.type : "Or",
+        kind, client, pay, total: orTotal, cost, stockId, paid,
+        label: `${it ? it.type : defType} ${karat}K · ${g(parseFloat(weight))}`,
+        karat, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: faconV,
+        itemType: it ? it.type : defType,
       });
     } else {
       const cost = dItem.cost * (parseInt(dQty) || 0);
@@ -295,12 +299,13 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
           <button className="btn btn-gold" disabled={!valid} onClick={save}>Encaisser la vente</button>
         </div>
       </>}>
-      <div className="seg">
-        <button className={`seg-btn ${kind === "or" ? "active" : ""}`} onClick={() => setKind("or")}><Gem size={15} /> Or & bijoux</button>
+      <div className="seg seg-3">
+        <button className={`seg-btn ${kind === "or" ? "active" : ""}`} onClick={() => setKind("or")}><Coins size={15} /> Or</button>
+        <button className={`seg-btn ${kind === "bijoux" ? "active" : ""}`} onClick={() => setKind("bijoux")}><Gem size={15} /> Bijoux</button>
         <button className={`seg-btn ${kind === "divers" ? "active" : ""}`} onClick={() => setKind("divers")}><Hammer size={15} /> Divers / fournitures</button>
       </div>
 
-      {kind === "or" ? (
+      {isGold ? (
         <div className="grid2">
           <Field label="Article du stock">
             <select className="input" value={stockId} onChange={(e) => onPickStock(e.target.value)}>
@@ -315,7 +320,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
           </Field>
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0,0" /></Field>
           <Field label="Prix / g (cours du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} /></Field>
-          <Field label="Façon / main d'œuvre"><input className="input num" type="number" value={facon} onChange={(e) => setFacon(e.target.value)} placeholder="0" /></Field>
+          {kind === "bijoux" && <Field label="Façon / main d'œuvre"><input className="input num" type="number" value={facon} onChange={(e) => setFacon(e.target.value)} placeholder="0" /></Field>}
           <Field label="Paiement">
             <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
           </Field>
@@ -799,7 +804,7 @@ function buildReceipt(tx) {
   const lines = [];
   if (!isSale) {
     lines.push({ desc: `Or ${tx.karat}K — rachat`, detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g`, amount: tx.total });
-  } else if (tx.kind === "or" && tx.weight) {
+  } else if ((tx.kind === "or" || tx.kind === "bijoux") && tx.weight) {
     lines.push({
       desc: `${tx.itemType || "Or"} ${tx.karat}K`,
       detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g${tx.facon ? ` + façon ${fcfa(tx.facon)}` : ""}`,
@@ -1263,7 +1268,7 @@ export default function App() {
     const rec = { id: uid(), date: TODAY, time: nowTime(), no: "V" + Date.now().toString(36).slice(-5).toUpperCase(), by: me(), ...s };
     setSales((arr) => [rec, ...arr]);
     setPayments((arr) => [{ id: uid(), saleId: rec.id, date: TODAY, time: rec.time, amount: s.paid != null ? s.paid : s.total, pay: s.pay, by: me() }, ...arr]);
-    if (s.kind === "or" && s.stockId) setGold((arr) => arr.map((it) => it.id === s.stockId ? { ...it, qty: Math.max(0, it.qty - 1) } : it));
+    if ((s.kind === "or" || s.kind === "bijoux") && s.stockId) setGold((arr) => arr.map((it) => it.id === s.stockId ? { ...it, qty: Math.max(0, it.qty - 1) } : it));
     if (s.kind === "divers" && s.diversId) setDivers((arr) => arr.map((it) => it.id === s.diversId ? { ...it, qty: Math.max(0, it.qty - s.dQty) } : it));
     setModal(null);
     setReceipt(buildReceipt(rec));
@@ -1449,7 +1454,7 @@ export default function App() {
             {sales.slice(0, 6).map((s) => (
               <tr key={s.id}>
                 <td className="num">{dateFr(s.date)}</td>
-                <td><span className={`pill ${s.kind === "or" ? "pill-gold" : "pill-ink"}`}>{s.kind === "or" ? "Vente or" : "Vente divers"}</span></td>
+                <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
                 <td>{s.label}</td>
                 <td className="muted">{s.client || "—"}</td>
                 <td className="r num pos">+{fcfa(s.total)}</td>
@@ -1477,7 +1482,7 @@ export default function App() {
               return (
               <tr key={s.id}>
                 <td className="num">{dateFr(s.date)}</td>
-                <td><span className={`pill ${s.kind === "or" ? "pill-gold" : "pill-ink"}`}>{s.kind === "or" ? "Or" : "Divers"}</span></td>
+                <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                 <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
                 <td className="muted">{s.client || "—"}</td>
                 <td className="muted">{s.by || "—"}</td>
@@ -2283,6 +2288,9 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .note-box { margin:14px 0 0; font-size:12.5px; color:var(--muted); background:#faf6ec; border:1px dashed var(--line); border-radius:9px; padding:11px 13px; }
 
 .seg { display:inline-flex; gap:4px; background:#efe8d9; border-radius:10px; padding:4px; margin-bottom:14px; }
+.seg-3 { display:flex; width:100%; }
+.seg-3 .seg-btn { flex:1; justify-content:center; padding:8px 6px; font-size:12px; gap:5px; }
+@media (max-width:480px){ .seg-3 .seg-btn { font-size:11px; padding:8px 4px; } .seg-3 .seg-btn svg { display:none; } }
 .seg-lg { margin-bottom:18px; }
 .seg-btn { display:inline-flex; align-items:center; gap:7px; border:0; background:none; padding:8px 14px;
   border-radius:7px; font:inherit; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; }
