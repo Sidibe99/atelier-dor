@@ -349,8 +349,11 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
   const [weight, setWeight] = useState("");
   const [ppg, setPpg] = useState(Math.round(prices[18].achat));
   const [note, setNote] = useState("");
+  const [paidNow, setPaidNow] = useState("");
   const onKarat = (k) => { setKarat(k); setPpg(Math.round(prices[k].achat)); };
   const total = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0);
+  const paid = paidNow === "" ? total : Math.min(parseFloat(paidNow) || 0, total);
+  const reste = total - paid;
   const valid = weight && ppg;
   return (
     <Modal title="Nouvel achat d'or" sub="Rachat client au cours du jour — entre en stock" onClose={onClose}
@@ -358,7 +361,7 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
         <div className="foot-total">À payer <strong className="num">{fcfa(total)}</strong></div>
         <div className="foot-actions">
           <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, weight: parseFloat(weight), ppg: parseFloat(ppg), total, note })}>Payer & ajouter au stock</button>
+          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, weight: parseFloat(weight), ppg: parseFloat(ppg), total, paid, note })}>Enregistrer & ajouter au stock</button>
         </div>
       </>}>
       <div className="grid2">
@@ -372,6 +375,10 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
           <datalist id="cl-list2">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
         </Field>
       </div>
+      <Field label="Montant payé maintenant">
+        <input className="input num" type="number" value={paidNow} onChange={(e) => setPaidNow(e.target.value)} placeholder={`${nf.format(Math.round(total))} (payé en totalité)`} />
+      </Field>
+      {reste > 0 && <div className="credit-note">Rachat partiellement payé · reste à payer au client : <strong className="num">{fcfa(reste)}</strong>{client ? "" : " — pense à indiquer le client"}</div>}
       <Field label="Note"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ex : bijoux cassés, héritage…" /></Field>
     </Modal>
   );
@@ -757,8 +764,8 @@ function buildReceipt(tx) {
     no: tx.no || (isSale ? "V" : "A") + String(tx.id || "").toUpperCase().slice(0, 5),
     date: dateFr(tx.date), time: tx.time || "",
     client: tx.client, pay: isSale ? tx.pay : null, note: tx.note || "",
-    paid: isSale && tx.paid != null ? tx.paid : null,
-    balance: isSale && tx.paid != null ? Math.max(0, tx.total - tx.paid) : 0,
+    paid: tx.paid != null ? tx.paid : null,
+    balance: tx.paid != null ? Math.max(0, tx.total - tx.paid) : 0,
     lines, total: tx.total,
   };
 }
@@ -1117,17 +1124,20 @@ export default function App() {
     const stockOrWeight = gold.reduce((s, it) => s + it.weight * it.qty, 0);
     const stockDiversValue = divers.reduce((s, it) => s + it.price * it.qty, 0);
     const totalVentes = sales.reduce((s, x) => s + x.total, 0);
+    const purchasePaidOf = (x) => (x.paid != null ? x.paid : x.total);
     const totalAchats = purchases.reduce((s, x) => s + x.total, 0);
+    const totalAchatsPaye = purchases.reduce((s, x) => s + purchasePaidOf(x), 0);
+    const dettesAchats = purchases.reduce((s, x) => s + Math.max(0, x.total - purchasePaidOf(x)), 0);
     const totalEncaisse = payments.reduce((s, x) => s + x.amount, 0);
     const creances = sales.reduce((s, x) => s + Math.max(0, x.total - payments.filter((p) => p.saleId === x.id).reduce((a, b) => a + b.amount, 0)), 0);
-    const tresorerie = INITIAL_CASH + totalEncaisse - totalAchats;
+    const tresorerie = INITIAL_CASH + totalEncaisse - totalAchatsPaye;
     const beneficeVentes = sales.reduce((s, x) => s + (x.total - x.cost), 0);
     const depensesTotal = expenses.reduce((s, x) => s + x.amount, 0);
     const beneficeNet = beneficeVentes - depensesTotal;
     const ventesJour = sales.filter((x) => x.date === TODAY).reduce((s, x) => s + x.total, 0);
     const achatsJour = purchases.filter((x) => x.date === TODAY).reduce((s, x) => s + x.total, 0);
     const lowStock = divers.filter((it) => it.qty <= it.min);
-    return { stockOrValue, stockOrWeight, stockDiversValue, totalVentes, totalAchats, tresorerie, beneficeVentes, depensesTotal, beneficeNet, ventesJour, achatsJour, lowStock, creances };
+    return { stockOrValue, stockOrWeight, stockDiversValue, totalVentes, totalAchats, totalAchatsPaye, dettesAchats, tresorerie, beneficeVentes, depensesTotal, beneficeNet, ventesJour, achatsJour, lowStock, creances };
   }, [gold, divers, sales, purchases, payments, expenses, prices]);
 
   const dailySeries = useMemo(() => {
@@ -1401,7 +1411,10 @@ export default function App() {
               <td className="r num">{g(p.weight)}</td>
               <td className="r num">{fcfa(p.ppg)}</td>
               <td className="muted">{p.note}</td>
-              <td className="r num neg">−{fcfa(p.total)}</td>
+              <td className="r num neg">
+                −{fcfa(p.paid != null ? p.paid : p.total)}
+                {p.paid != null && p.total - p.paid > 0 && <div className="mini-warn">reste {fcfa(p.total - p.paid)}</div>}
+              </td>
               <td className="r"><button className="icon-btn" title="Voir le bordereau" onClick={() => setReceipt(buildReceipt({ ...p, kind: "purchase" }))}><Receipt size={15} /></button></td>
             </tr>
           ))}
@@ -1545,7 +1558,7 @@ export default function App() {
     const esp = byPay("Espèces"), wave = byPay("Wave"), om = byPay("Orange Money"), vir = byPay("Virement");
     const encTotal = todayPays.reduce((a, b) => a + b.amount, 0);
     const caTotal = todaySales.reduce((a, b) => a + b.total, 0);
-    const rachats = purchases.filter((p) => p.date === TODAY).reduce((a, b) => a + b.total, 0);
+    const rachats = purchases.filter((p) => p.date === TODAY).reduce((a, b) => a + (b.paid != null ? b.paid : b.total), 0);
     const depenses = expenses.filter((e) => e.date === TODAY && e.pay === "Espèces").reduce((a, b) => a + b.amount, 0);
     const theorique = fondCaisse + esp - rachats - depenses;
     const compte = parseFloat(compteCaisse) || 0;
@@ -1952,7 +1965,6 @@ export default function App() {
             <span className="avatar sm">{currentUser.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</span>
             <span className="side-user-main"><strong>{currentUser.name}</strong><em>{isPatron ? "Patron" : "Vendeur"}</em></span>
           </div>
-          {isPatron && <div className="side-cash"><span>Trésorerie</span><strong className="num">{fcfa(m.tresorerie)}</strong></div>}
           <button className="btn logout-btn" onClick={() => { setCurrentUser(null); setNavOpen(false); }}><LogOut size={15} /> Déconnexion</button>
           <div className="save-ind">
             <span className={`save-dot ${saveState}`} />
