@@ -65,6 +65,8 @@ const inPeriod = (dateStr, period) => {
   return true;
 };
 const PERIOD_LABEL = { today: "Aujourd'hui", month: "Ce mois", year: "Cette année", all: "Tout" };
+const enteredDate = (it) => it.added || (it.origin && it.origin.date) || null;
+const daysInStock = (it) => { const d = enteredDate(it); return d ? Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 86400000)) : null; };
 const purity = (k) => k / 24;     // pureté (24K = or pur)
 const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée en direct)
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
@@ -461,6 +463,7 @@ function GoldModal({ item, onClose, onSave }) {
         <Field label="Quantité"><input className="input num" type="number" min="1" value={f.qty} onChange={(e) => set("qty", e.target.value)} /></Field>
       </div>
       <Field label="Description"><input className="input" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="ex : Bague chevalière homme" /></Field>
+      <Field label="Photo de l'article"><LogoField logo={f.photo} onChange={(v) => set("photo", v)} fallback="📷" label="photo" /></Field>
     </Modal>
   );
 }
@@ -495,6 +498,7 @@ function DiversModal({ item, onClose, onSave }) {
         <Field label="Coût d'achat"><input className="input num" type="number" value={f.cost} onChange={(e) => set("cost", e.target.value)} placeholder="0" /></Field>
         <Field label="Prix de vente"><input className="input num" type="number" value={f.price} onChange={(e) => set("price", e.target.value)} placeholder="0" /></Field>
       </div>
+      <Field label="Photo (optionnel)"><LogoField logo={f.photo} onChange={(v) => set("photo", v)} fallback="📷" label="photo" /></Field>
     </Modal>
   );
 }
@@ -508,6 +512,7 @@ function ClientModal({ item, onClose, onSave }) {
       <Field label="Nom complet"><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
       <Field label="Téléphone"><input className="input" value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="77 000 00 00" /></Field>
       <Field label="Note"><input className="input" value={f.note} onChange={(e) => set("note", e.target.value)} /></Field>
+      <label className="chk-row"><input type="checkbox" checked={!!f.pro} onChange={(e) => set("pro", e.target.checked)} /><span>Fournisseur professionnel (grossiste en or)</span></label>
     </Modal>
   );
 }
@@ -523,7 +528,7 @@ function ExpenseModal({ item, onClose, onSave }) {
       <div className="grid2">
         <Field label="Catégorie">
           <select className="input" value={f.cat} onChange={(e) => set("cat", e.target.value)}>
-            {["Loyer", "Salaire", "Électricité", "Eau", "Fournitures", "Transport", "Taxe / impôt", "Autre"].map((c) => <option key={c}>{c}</option>)}
+            {["Loyer", "Salaire", "Électricité", "Eau", "Fournitures", "Transport", "Taxe / impôt", "Remboursement", "Autre"].map((c) => <option key={c}>{c}</option>)}
           </select>
         </Field>
         <Field label="Montant"><input className="input num" type="number" value={f.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" /></Field>
@@ -584,13 +589,13 @@ function readLogo(file, cb) {
   };
   reader.readAsDataURL(file);
 }
-function LogoField({ logo, onChange }) {
+function LogoField({ logo, onChange, fallback = "Au", label = "logo" }) {
   const ref = useRef(null);
   return (
     <div className="logo-field">
-      <div className="logo-preview">{logo ? <img src={logo} alt="logo" /> : <span>Au</span>}</div>
+      <div className="logo-preview">{logo ? <img src={logo} alt={label} /> : <span>{fallback}</span>}</div>
       <div className="logo-actions">
-        <button type="button" className="btn btn-line btn-xs" onClick={() => ref.current && ref.current.click()}>{logo ? "Changer le logo" : "Choisir un logo"}</button>
+        <button type="button" className="btn btn-line btn-xs" onClick={() => ref.current && ref.current.click()}>{logo ? `Changer la ${label}` : `Choisir une ${label}`}</button>
         {logo && <button type="button" className="btn btn-line btn-xs danger" onClick={() => onChange("")}>Retirer</button>}
         <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { readLogo(e.target.files && e.target.files[0], onChange); e.target.value = ""; }} />
       </div>
@@ -1034,6 +1039,35 @@ function AcompteModal({ sale, balance, onClose, onSave }) {
     </Modal>
   );
 }
+function RetourModal({ sale, onClose, onSave }) {
+  const [amount, setAmount] = useState(Math.round(sale.total));
+  const [pay, setPay] = useState("Espèces");
+  const [restock, setRestock] = useState(!!(sale.stockId || sale.diversId));
+  const [motif, setMotif] = useState("");
+  const a = Math.max(0, parseFloat(amount) || 0);
+  const hasItem = !!(sale.stockId || sale.diversId);
+  return (
+    <Modal title="Retour / avoir" sub={sale.label} onClose={onClose}
+      footer={<>
+        <div className="foot-total">Remboursement <strong className="num">{fcfa(a)}</strong></div>
+        <div className="foot-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+          <button className="btn btn-clay" onClick={() => onSave({ amount: a, pay, restock, motif })}>Valider le retour</button>
+        </div>
+      </>}>
+      <div className="grid2">
+        <Field label="Montant remboursé"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Moyen"><select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      </div>
+      {hasItem ? (
+        <label className="chk-row"><input type="checkbox" checked={restock} onChange={(e) => setRestock(e.target.checked)} /><span>Remettre l'article en stock</span></label>
+      ) : <p className="muted small" style={{ margin: "4px 0 10px" }}>Vente libre : aucun article précis à remettre en stock.</p>}
+      <Field label="Motif (optionnel)"><input className="input" value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="ex : taille incorrecte" /></Field>
+      <p className="note-box">Le remboursement est enregistré comme une sortie d'argent (dépense « Remboursement ») — la caisse et la trésorerie sont mises à jour. La vente d'origine reste dans l'historique, marquée « retournée ».</p>
+    </Modal>
+  );
+}
+
 function SettlePurchaseModal({ purchase, balance, onClose, onSave }) {
   const [amount, setAmount] = useState(Math.round(balance));
   const [pay, setPay] = useState("Espèces");
@@ -1085,6 +1119,7 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [stockTab, setStockTab] = useState("or");
   const [reportPeriod, setReportPeriod] = useState("month");
+  const [clientFilter, setClientFilter] = useState("all");
   const [q, setQ] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
@@ -1106,6 +1141,7 @@ export default function App() {
   const [formulaReq, setFormulaReq] = useState(null);
   const [clientView, setClientView] = useState(null);
   const [productView, setProductView] = useState(null);
+  const [returnFor, setReturnFor] = useState(null);
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -1362,8 +1398,17 @@ export default function App() {
     setPurchasePayments((arr) => [{ id: uid(), purchaseId: purchase.id, date: TODAY, time: nowTime(), amount, pay, by: me() }, ...arr]);
     setSettleFor(null);
   };
-  const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
-  const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
+  const recordReturn = (sale, { amount, pay, restock, motif }) => {
+    if (amount > 0) setExpenses((arr) => [{ id: uid(), date: TODAY, label: `Retour — ${sale.label}${motif ? " · " + motif : ""}`, cat: "Remboursement", pay, amount, by: me() }, ...arr]);
+    if (restock) {
+      if (sale.stockId) setGold((arr) => arr.map((it) => it.id === sale.stockId ? { ...it, qty: it.qty + 1 } : it));
+      else if (sale.diversId) setDivers((arr) => arr.map((it) => it.id === sale.diversId ? { ...it, qty: it.qty + (sale.dQty || 1) } : it));
+    }
+    setSales((arr) => arr.map((s) => s.id === sale.id ? { ...s, returned: true } : s));
+    setReturnFor(null);
+  };
+  const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
+  const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
   const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
   const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, ...it }, ...arr]); setModal(null); };
   const saveUser = (it) => {
@@ -1468,7 +1513,7 @@ export default function App() {
   const rowsAchats = () => purchases.map((p) => ({ Date: dateFr(p.date), Client: p.client || "", Carat: p.karat, "Poids (g)": p.weight, "Prix/g": p.ppg, Total: p.total, Payé: purchasePaidFor(p.id), Reste: Math.max(0, purchaseBalance(p)), Note: p.note || "" }));
   const rowsGold = (list) => list.map((it) => ({ Catégorie: goldCat(it) === "or" ? "Or brut" : "Bijou", Type: it.type, Description: it.desc || "", Carat: it.karat, "Poids (g)": it.weight, Qté: it.qty }));
   const rowsDivers = () => divers.map((it) => ({ Désignation: it.name, Catégorie: it.cat, Qté: it.qty, Unité: it.unit, Coût: it.cost, Vente: it.price, "Seuil min": it.min }));
-  const rowsClients = () => clients.map((c) => ({ Nom: c.name, Téléphone: c.phone || "", Note: c.note || "" }));
+  const rowsClients = () => clients.map((c) => ({ Nom: c.name, Téléphone: c.phone || "", Note: c.note || "", "Fournisseur pro": c.pro ? "Oui" : "" }));
   const rowsDepenses = () => expenses.map((e) => ({ Date: dateFr(e.date), Libellé: e.label, Catégorie: e.cat, Paiement: e.pay, Montant: e.amount }));
 
   const exportAllXlsx = () => xlsxExport(`atelier-dor-${TODAY}.xlsx`, {
@@ -1502,7 +1547,7 @@ export default function App() {
     setDivers((arr) => [...add, ...arr]); window.alert(`${add.length} article(s) divers importé(s).`);
   });
   const importClients = (file) => xlsxRead(file, (rows) => {
-    const add = rows.map((r) => ({ id: uid(), name: pick(r, ["Nom", "Name", "Client"]), phone: String(pick(r, ["Téléphone", "Telephone", "Phone", "Tel"])), note: pick(r, ["Note", "Remarque"]) }))
+    const add = rows.map((r) => ({ id: uid(), name: pick(r, ["Nom", "Name", "Client"]), phone: String(pick(r, ["Téléphone", "Telephone", "Phone", "Tel"])), note: pick(r, ["Note", "Remarque"]), pro: /oui|yes|1|x/i.test(String(pick(r, ["Fournisseur pro", "Pro"]))) }))
       .filter((c) => c.name && !clients.find((x) => x.name === c.name));
     if (!add.length) { window.alert("Aucun nouveau client (colonnes attendues : Nom, Téléphone, Note)."); return; }
     setClients((arr) => [...arr, ...add]); window.alert(`${add.length} client(s) importé(s).`);
@@ -1559,7 +1604,7 @@ export default function App() {
       {m.lowStock.length > 0 && (
         <div className="card alert-card">
           <div className="alert-ico"><AlertTriangle size={18} /></div>
-          <div><strong>Stock divers bas</strong><p className="muted">{m.lowStock.map((x) => `${x.name} (${x.qty} ${x.unit})`).join(" · ")}</p></div>
+          <div><strong>Stock bas — {m.lowStock.length} article(s)</strong><p className="muted">{m.lowStock.map((x) => `${x.name} (${x.qty} ${x.unit})`).join(" · ")}</p></div>
           <button className="btn btn-line" onClick={() => { go("stock"); setStockTab("divers"); }}>Voir le stock</button>
         </div>
       )}
@@ -1604,13 +1649,16 @@ export default function App() {
               <tr key={s.id}>
                 <td className="num">{dateFr(s.date)}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
-                <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
+                <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
                 <td>{clientCell(s.client)}</td>
                 <td className="muted">{s.by || "—"}</td>
                 <td className="muted">{s.pay}</td>
                 <td className="r num">{fcfa(s.total - s.cost)}</td>
                 <td className="r num pos">{fcfa(s.total)}</td>
-                <td className="r"><button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button></td>
+                <td className="r"><div className="rowbtns">
+                  {!s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
+                  <button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button>
+                </div></td>
               </tr>
               );
             })}
@@ -1741,17 +1789,20 @@ export default function App() {
       const o = item.origin;
       return (
         <Modal title={`${item.type} ${item.karat}K · ${g(item.weight)}`} sub={item.desc || "Article du stock"} onClose={() => setProductView(null)}>
+          {item.photo && <img className="prod-photo" src={item.photo} alt="" />}
           <div className="ch-kpis">
             <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty}</strong></div>
             <div className="ch-kpi"><span>Vendu (total)</span><strong className="num pos">{fcfa(sold)}</strong></div>
             <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>
-            <div className="ch-kpi"><span>Statut</span><strong>{item.qty > 0 ? "En stock" : "Épuisé"}</strong></div>
+            <div className="ch-kpi"><span>En stock depuis</span><strong>{daysInStock(item) != null ? `${daysInStock(item)} j` : "—"}</strong></div>
           </div>
           <h4 className="ch-h">Entrée</h4>
           {o ? (
             <p className="req-msg">Racheté le {dateFr(o.date)}{o.client ? ` à ${o.client}` : ""} · payé {fcfa(o.price)}.</p>
+          ) : enteredDate(item) ? (
+            <p className="req-msg">Ajouté au stock le {dateFr(enteredDate(item))}.</p>
           ) : (
-            <p className="muted small">Ajouté manuellement au stock (origine non enregistrée).</p>
+            <p className="muted small">Ajouté manuellement au stock (date non enregistrée).</p>
           )}
           <h4 className="ch-h">Sorties / ventes <span className="count">{linked.length}</span></h4>
           {linked.length === 0 ? <p className="muted small">Pas encore vendu via cet article. <span className="muted">(Les ventes « libres » ne sont pas rattachées.)</span></p> : (
@@ -1775,6 +1826,7 @@ export default function App() {
     const sold = linked.reduce((a, s) => a + s.total, 0);
     return (
       <Modal title={item.name} sub="Article divers" onClose={() => setProductView(null)}>
+        {item.photo && <img className="prod-photo" src={item.photo} alt="" />}
         <div className="ch-kpis">
           <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty} {item.unit}</strong></div>
           <div className="ch-kpi"><span>Vendu (qté)</span><strong className="num">{qtySold}</strong></div>
@@ -1820,8 +1872,13 @@ export default function App() {
             <tbody>
               {list.length === 0 ? <tr><td colSpan={7} className="muted small">Aucun article dans cette catégorie.</td></tr> : list.map((it) => (
                 <tr key={it.id}>
-                  <td><button className="name-link" onClick={() => setProductView({ kind: "gold", item: it })}>{it.type}</button></td>
-                  <td className="muted">{it.desc}</td>
+                  <td>
+                    <div className="prod-cell">
+                      {it.photo ? <img className="prod-thumb" src={it.photo} alt="" /> : <span className="prod-thumb ph">📷</span>}
+                      <button className="name-link" onClick={() => setProductView({ kind: "gold", item: it })}>{it.type}</button>
+                    </div>
+                  </td>
+                  <td className="muted">{it.desc}{daysInStock(it) != null && daysInStock(it) >= 90 && <span className="mini-warn">dort {daysInStock(it)} j</span>}</td>
                   <td><Badge k={it.karat} /></td>
                   <td className="r num">{g(it.weight)}</td>
                   <td className="r num">{it.qty}</td>
@@ -1861,7 +1918,7 @@ export default function App() {
             <tbody>
               {divers.map((it) => (
                 <tr key={it.id} className={it.qty <= it.min ? "warn-row" : ""}>
-                  <td><button className="name-link" onClick={() => setProductView({ kind: "divers", item: it })}>{it.name}</button>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
+                  <td><div className="prod-cell">{it.photo ? <img className="prod-thumb" src={it.photo} alt="" /> : <span className="prod-thumb ph">📷</span>}<button className="name-link" onClick={() => setProductView({ kind: "divers", item: it })}>{it.name}</button></div>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
                   <td className="muted">{it.cat}</td>
                   <td className="r num">{it.qty} {it.unit}</td>
                   <td className="r num">{fcfa(it.cost)}</td>
@@ -1891,8 +1948,17 @@ export default function App() {
           <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>
         </div>
       </div>
+      <div className="seg seg-lg seg-3" style={{ marginBottom: 14 }}>
+        <button className={`seg-btn ${clientFilter === "all" ? "active" : ""}`} onClick={() => setClientFilter("all")}>Tous</button>
+        <button className={`seg-btn ${clientFilter === "clients" ? "active" : ""}`} onClick={() => setClientFilter("clients")}>Clients</button>
+        <button className={`seg-btn ${clientFilter === "fourn" ? "active" : ""}`} onClick={() => setClientFilter("fourn")}>Fournisseurs</button>
+      </div>
       <div className="client-grid">
-        {clients.map((c) => {
+        {clients.filter((c) => {
+          if (clientFilter === "clients") return sales.some((s) => s.client === c.name);
+          if (clientFilter === "fourn") return c.pro || purchases.some((p) => p.client === c.name);
+          return true;
+        }).map((c) => {
           const nv = sales.filter((s) => s.client === c.name).length;
           const na = purchases.filter((p) => p.client === c.name).length;
           return (
@@ -1904,7 +1970,8 @@ export default function App() {
                 {c.note && <span className="client-note">{c.note}</span>}
                 <div className="role-tags" style={{ margin: "4px 0 0" }}>
                   {nv > 0 && <span className="pill pill-gold">Client</span>}
-                  {na > 0 && <span className="pill pill-ink">Fournisseur</span>}
+                  {(na > 0 || c.pro) && <span className="pill pill-ink">Fournisseur</span>}
+                  {c.pro && <span className="pill pill-gold">Pro</span>}
                 </div>
                 <span className="muted small">{nv} vente(s) · {na} rachat(s)</span>
               </div>
@@ -2544,6 +2611,7 @@ export default function App() {
       {acompteFor && <AcompteModal sale={acompteFor} balance={balanceFor(acompteFor)} onClose={() => setAcompteFor(null)} onSave={(p) => recordPayment(acompteFor, p)} />}
       {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
       {formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}
+      {returnFor && <RetourModal sale={returnFor} onClose={() => setReturnFor(null)} onSave={(p) => recordReturn(returnFor, p)} />}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
     </div>
@@ -2695,6 +2763,12 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .cat-split { display:flex; gap:8px; flex-wrap:wrap; margin:-4px 0 14px; }
 .cat-chip { background:#f6efe1; border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:600; }
 .cat-chip em { color:var(--muted); font-style:normal; font-weight:500; margin-right:5px; }
+.prod-cell { display:flex; align-items:center; gap:9px; }
+.prod-thumb { width:34px; height:34px; border-radius:8px; object-fit:cover; border:1px solid var(--line); flex:none; }
+.prod-thumb.ph { display:grid; place-items:center; background:#f1ead9; font-size:15px; }
+.prod-photo { display:block; width:100%; max-height:200px; object-fit:contain; background:#f6efe1; border:1px solid var(--line); border-radius:12px; margin-bottom:14px; }
+.chk-row { display:flex; align-items:center; gap:9px; margin:6px 0 12px; font-size:14px; cursor:pointer; }
+.chk-row input { width:17px; height:17px; accent-color:var(--gold); }
 .table.compact td { padding:7px 8px; font-size:13px; }
 @media (max-width:560px){ .ch-kpis { grid-template-columns:repeat(2,1fr); } }
 a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
