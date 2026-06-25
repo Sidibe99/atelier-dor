@@ -645,6 +645,36 @@ function LockScreen({ users, onUnlock, openAdmin, logo }) {
   );
 }
 
+function OnlineLogin({ onExit, logo }) {
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    const mail = email.trim().toLowerCase();
+    if (!mail || !pwd) { setErr("Entre ton e-mail et ton mot de passe."); return; }
+    setBusy(true); setErr("");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: mail, password: pwd });
+      if (error) setErr("E-mail ou mot de passe incorrect.");
+    } catch (e) { setErr("Connexion impossible. Vérifie ta connexion internet."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="lock">
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">Espace en ligne</div></div>
+      <div className="act-box">
+        <p className="lock-q">Connexion à ton compte</p>
+        <input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="Adresse e-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
+        <input className="act-input" type="password" value={pwd} onChange={(e) => { setPwd(e.target.value); setErr(""); }} placeholder="Mot de passe" onKeyDown={(e) => e.key === "Enter" && submit()} />
+        {err && <p className="lock-err">{err}</p>}
+        <button className="btn btn-gold act-btn" onClick={submit} disabled={busy}>{busy ? "Connexion…" : "Se connecter"}</button>
+      </div>
+      {onExit && <button className="editor-link" onClick={onExit}>Retour à l'application</button>}
+    </div>
+  );
+}
+
 function BackupModal({ mode, json, onClose, onImport }) {
   const [text, setText] = useState(mode === "export" ? json : "");
   const [copied, setCopied] = useState(false);
@@ -1147,8 +1177,10 @@ export default function App() {
   const [expenses, setExpenses] = useState(seedExpenses);
   const [users, setUsers] = useState(seedUsers);
   const [currentUser, setCurrentUser] = useState(null);
+  const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
+  const [authReady, setAuthReady] = useState(false); // session en ligne restaurée ?
   const [backup, setBackup] = useState(null); // null | "export" | "import"
-  const [route, setRoute] = useState(() => (typeof window !== "undefined" && (window.location.hash || "").replace(/^#/, "") === "admin-create") ? "admin" : "app");
+  const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : "app"; });
   const [license, setLicense] = useState(null);
   const [licReady, setLicReady] = useState(false);
   const [resellerPhone, setResellerPhone] = useState("");
@@ -1285,9 +1317,26 @@ export default function App() {
   // mémoriser la page courante pour la rouvrir après rafraîchissement
   useEffect(() => { if (loaded) { try { STORE.set("atelierdor:view", view); } catch (e) { /* */ } } }, [view, loaded]);
 
+  // ---- session en ligne Supabase (restauration + écoute) ----
+  useEffect(() => {
+    let sub = null;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        setAuthUser(data && data.session ? data.session.user : null);
+      } catch (e) { /* hors ligne ou non configuré */ }
+      finally { setAuthReady(true); }
+      try {
+        const r = supabase.auth.onAuthStateChange((_evt, session) => setAuthUser(session ? session.user : null));
+        sub = r && r.data ? r.data.subscription : null;
+      } catch (e) { /* */ }
+    })();
+    return () => { try { sub && sub.unsubscribe(); } catch (e) { /* */ } };
+  }, []);
+
   // ---- routage #admin-create + vérification de la licence ----
   useEffect(() => {
-    const onHash = () => { const h = (window.location.hash || "").replace(/^#/, ""); setRoute(h === "admin-create" ? "admin" : "app"); };
+    const onHash = () => { const h = (window.location.hash || "").replace(/^#/, ""); setRoute(h === "admin-create" ? "admin" : h === "espace" ? "espace" : "app"); };
     window.addEventListener("hashchange", onHash);
     (async () => {
       try {
@@ -1483,6 +1532,8 @@ export default function App() {
   };
   const goAdmin = () => { try { window.location.hash = "admin-create"; } catch (e) { /* */ } setRoute("admin"); };
   const exitAdmin = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
+  const authSignOut = async () => { try { await supabase.auth.signOut(); } catch (e) { /* */ } setAuthUser(null); };
+  const exitEspace = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
 
   const buildBackupJson = () => JSON.stringify({
     _app: "AtelierDor", _exportedAt: new Date().toISOString(),
@@ -2545,6 +2596,27 @@ export default function App() {
 
   if (route === "admin") {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
+  }
+  if (route === "espace") {
+    return (
+      <div className="app"><style>{CSS}</style>
+        {!authReady
+          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
+          : !authUser
+            ? (<OnlineLogin onExit={exitEspace} logo={shop.logo} />)
+            : (
+              <div className="lock">
+                <div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-title">Espace revendeur</div><div className="lock-sub">Connecté</div></div>
+                <div className="act-box">
+                  <p className="lock-q">Tu es connecté en ligne</p>
+                  <p className="muted small" style={{ marginBottom: 12 }}>{authUser.email}</p>
+                  <button className="btn btn-gold act-btn" onClick={authSignOut}>Déconnexion</button>
+                </div>
+                <button className="editor-link" onClick={exitEspace}>Retour à l'application</button>
+              </div>
+            )}
+      </div>
+    );
   }
   if (!licReady) {
     return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
