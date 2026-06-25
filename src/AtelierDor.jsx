@@ -10,8 +10,9 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import * as XLSX from "xlsx";
-import { LIC_SECRET, MASTER_PW } from "./config.js";
-
+import { createClient } from "@supabase/supabase-js";
+import { LIC_SECRET, MASTER_PW, SUPABASE_URL, SUPABASE_KEY } from "./config.js";
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 /* ----------------------------- utilitaires ------------------------------ */
 const nf = new Intl.NumberFormat("fr-FR");
 const fcfa = (n) => `${nf.format(Math.round(n || 0))} F`;
