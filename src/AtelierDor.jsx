@@ -726,7 +726,67 @@ function ShopFormModal({ mode, shop, onClose, onSubmit }) {
   );
 }
 
-function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
+function PricingModal({ onClose, onSaved }) {
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("pricing").select("*");
+        if (error) throw error;
+        const order = { E: 0, S: 1, P: 2, R: 3 };
+        const sorted = (data || []).slice().sort((a, b) => (order[a.plan] ?? 9) - (order[b.plan] ?? 9));
+        setRows(sorted);
+      } catch (e) { setErr("Impossible de charger les prix. Vérifie ta connexion."); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+  const setField = (plan, key, val) => setRows((rs) => rs.map((r) => (r.plan === plan ? { ...r, [key]: val } : r)));
+  const save = async () => {
+    if (!rows) return;
+    setBusy(true); setErr("");
+    try {
+      for (const r of rows) {
+        const { error } = await supabase.from("pricing").update({ amount: parseInt(r.amount, 10) || 0, period: r.period }).eq("plan", r.plan);
+        if (error) throw error;
+      }
+      if (onSaved) await onSaved();
+      onClose();
+    } catch (e) { setErr("Enregistrement impossible. Vérifie ta connexion."); setBusy(false); }
+  };
+  return (
+    <Modal
+      title="Prix des formules"
+      sub="Modifié = visible aussitôt par tes clients"
+      onClose={onClose}
+      footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save} disabled={busy || loading}>{busy ? "…" : "Enregistrer"}</button></>}>
+      {loading ? (
+        <p className="muted">Chargement…</p>
+      ) : !rows ? (
+        <p className="lock-err">{err}</p>
+      ) : (
+        <>
+          {rows.map((r) => (
+            <div className="price-row" key={r.plan}>
+              <div className="price-name">{FORMULAS[r.plan] ? FORMULAS[r.plan].name : r.plan}</div>
+              <input className="act-input price-amount" type="number" min="0" value={r.amount} onChange={(e) => setField(r.plan, "amount", e.target.value)} />
+              <select className="act-input price-period" value={r.period} onChange={(e) => setField(r.plan, "period", e.target.value)}>
+                <option value="mois">F / mois</option>
+                <option value="an">F / an</option>
+                <option value="gratuit">gratuit</option>
+              </select>
+            </div>
+          ))}
+          {err && <p className="lock-err">{err}</p>}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -784,6 +844,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
         <div className="reseller-brand"><BrandMark logo={logo} /><div><div className="brand-name">Espace revendeur</div><div className="brand-sub">{authUser.email}</div></div></div>
         <div className="reseller-actions">
           <button className="btn btn-gold" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Nouvelle boutique</button>
+          <button className="btn btn-line" onClick={() => setModal({ mode: "pricing" })}>Prix / Formules</button>
           <button className="btn btn-line" onClick={onSignOut}><LogOut size={15} /> Déconnexion</button>
         </div>
       </header>
@@ -829,6 +890,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
 
       {modal && modal.mode === "create" && <ShopFormModal mode="create" onClose={() => setModal(null)} onSubmit={createShop} />}
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
+      {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
     </div>
   );
 }
@@ -2777,7 +2839,7 @@ export default function App() {
           ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
           : !authUser
             ? (<OnlineLogin onExit={exitEspace} logo={shop.logo} />)
-            : (<ResellerSpace authUser={authUser} onSignOut={authSignOut} onExit={exitEspace} logo={shop.logo} />)}
+            : (<ResellerSpace authUser={authUser} onSignOut={authSignOut} onExit={exitEspace} onPricesSaved={loadPrices} logo={shop.logo} />)}
       </div>
     );
   }
@@ -3283,4 +3345,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .pill-plan { background:rgba(28,22,17,.06); color:var(--muted); }
 .plan-row { display:flex; gap:8px; flex-wrap:wrap; }
 .plan-pick { font-size:.85rem; padding:8px 12px; }
+.price-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.price-name { flex:1; font-weight:600; color:var(--ink); }
+.price-amount { width:120px; }
+.price-period { width:120px; }
 `;
