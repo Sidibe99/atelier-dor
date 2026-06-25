@@ -72,8 +72,8 @@ const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée e
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
 
 /* ----------------------------- licence ---------------------------------- */
-const LIC_SECRET = "ATELIERDOR-K7-2026";   // clé de signature des codes (À CHANGER avant revente)
-const MASTER_PW = "admin2026";              // mot de passe maître de l'espace éditeur (À CHANGER)
+const LIC_SECRET = "Sene-gal@Teranga?Guinee1@Labe99 ";   // clé de signature des codes (À CHANGER avant revente)
+const MASTER_PW = "Rouzo@rKedougou?LawolTamba ";              // mot de passe maître de l'espace éditeur (À CHANGER)
 const DAY = 86400000;
 // Formules : limites (admins / utilisateurs), durée et tarif. Tarifs à personnaliser.
 const FORMULAS = {
