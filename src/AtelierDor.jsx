@@ -55,6 +55,16 @@ const PAY_METHODS = ["Espèces", "Wave", "Orange Money", "Banque"];
 const KIND_LABEL = { or: "Or", bijoux: "Bijoux", divers: "Divers" };
 const RAW_GOLD_TYPES = ["Lingot", "Pièce", "Débris", "Or brut", "Or"];
 const goldCat = (it) => it.cat || (RAW_GOLD_TYPES.includes(it.type) ? "or" : "bijou");
+const MONTHS_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const monthLabel = (mk) => { const [y, mo] = mk.split("-"); return `${MONTHS_FR[parseInt(mo) - 1] || mo} ${y}`; };
+const inPeriod = (dateStr, period) => {
+  if (!period || period === "all") return true;
+  if (period === "today") return dateStr === TODAY;
+  if (period === "month") return dateStr.slice(0, 7) === TODAY.slice(0, 7);
+  if (period === "year") return dateStr.slice(0, 4) === TODAY.slice(0, 4);
+  return true;
+};
+const PERIOD_LABEL = { today: "Aujourd'hui", month: "Ce mois", year: "Cette année", all: "Tout" };
 const purity = (k) => k / 24;     // pureté (24K = or pur)
 const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée en direct)
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
@@ -1074,6 +1084,7 @@ export default function App() {
   const [purchasePayments, setPurchasePayments] = useState(seedPurchasePayments);
   const [modal, setModal] = useState(null);
   const [stockTab, setStockTab] = useState("or");
+  const [reportPeriod, setReportPeriod] = useState("month");
   const [q, setQ] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
@@ -1094,6 +1105,7 @@ export default function App() {
   const [settleFor, setSettleFor] = useState(null);
   const [formulaReq, setFormulaReq] = useState(null);
   const [clientView, setClientView] = useState(null);
+  const [productView, setProductView] = useState(null);
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -1342,7 +1354,7 @@ export default function App() {
     const rec = { id: uid(), date: TODAY, time: nowTime(), no: "A" + Date.now().toString(36).slice(-5).toUpperCase(), kind: "purchase", by: me(), ...p };
     setPurchases((arr) => [rec, ...arr]);
     setPurchasePayments((arr) => [{ id: uid(), purchaseId: rec.id, date: TODAY, time: rec.time, amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces", by: me() }, ...arr]);
-    setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}`, karat: p.karat, weight: p.weight, qty: 1 }, ...arr]);
+    setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}`, karat: p.karat, weight: p.weight, qty: 1, cat: "or", origin: { from: "rachat", client: p.client || "", date: TODAY, price: p.total, purchaseId: rec.id } }, ...arr]);
     setModal(null);
     setReceipt(buildReceipt(rec));
   };
@@ -1703,6 +1715,73 @@ export default function App() {
     );
   };
 
+  const renderProductHistory = () => {
+    const { kind, item } = productView;
+    if (kind === "gold") {
+      const linked = sales.filter((s) => s.stockId === item.id);
+      const sold = linked.reduce((a, s) => a + s.total, 0);
+      const marge = linked.reduce((a, s) => a + (s.total - s.cost), 0);
+      const o = item.origin;
+      return (
+        <Modal title={`${item.type} ${item.karat}K · ${g(item.weight)}`} sub={item.desc || "Article du stock"} onClose={() => setProductView(null)}>
+          <div className="ch-kpis">
+            <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty}</strong></div>
+            <div className="ch-kpi"><span>Vendu (total)</span><strong className="num pos">{fcfa(sold)}</strong></div>
+            <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>
+            <div className="ch-kpi"><span>Statut</span><strong>{item.qty > 0 ? "En stock" : "Épuisé"}</strong></div>
+          </div>
+          <h4 className="ch-h">Entrée</h4>
+          {o ? (
+            <p className="req-msg">Racheté le {dateFr(o.date)}{o.client ? ` à ${o.client}` : ""} · payé {fcfa(o.price)}.</p>
+          ) : (
+            <p className="muted small">Ajouté manuellement au stock (origine non enregistrée).</p>
+          )}
+          <h4 className="ch-h">Sorties / ventes <span className="count">{linked.length}</span></h4>
+          {linked.length === 0 ? <p className="muted small">Pas encore vendu via cet article. <span className="muted">(Les ventes « libres » ne sont pas rattachées.)</span></p> : (
+            <table className="table compact"><tbody>
+              {linked.map((s) => (
+                <tr key={s.id}>
+                  <td className="num">{dateFr(s.date)}</td>
+                  <td>{s.client || "—"}</td>
+                  <td className="r num pos">{fcfa(s.total)}</td>
+                  <td className="r num">marge {fcfa(s.total - s.cost)}</td>
+                  <td className="r"><button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button></td>
+                </tr>
+              ))}
+            </tbody></table>
+          )}
+        </Modal>
+      );
+    }
+    const linked = sales.filter((s) => s.diversId === item.id);
+    const qtySold = linked.reduce((a, s) => a + (s.dQty || 0), 0);
+    const sold = linked.reduce((a, s) => a + s.total, 0);
+    return (
+      <Modal title={item.name} sub="Article divers" onClose={() => setProductView(null)}>
+        <div className="ch-kpis">
+          <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty} {item.unit}</strong></div>
+          <div className="ch-kpi"><span>Vendu (qté)</span><strong className="num">{qtySold}</strong></div>
+          <div className="ch-kpi"><span>Vendu (total)</span><strong className="num pos">{fcfa(sold)}</strong></div>
+          <div className="ch-kpi"><span>Prix unitaire</span><strong className="num">{fcfa(item.price)}</strong></div>
+        </div>
+        <h4 className="ch-h">Sorties / ventes <span className="count">{linked.length}</span></h4>
+        {linked.length === 0 ? <p className="muted small">Pas encore vendu.</p> : (
+          <table className="table compact"><tbody>
+            {linked.map((s) => (
+              <tr key={s.id}>
+                <td className="num">{dateFr(s.date)}</td>
+                <td>{s.client || "—"}</td>
+                <td className="r num">×{s.dQty}</td>
+                <td className="r num pos">{fcfa(s.total)}</td>
+                <td className="r"><button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button></td>
+              </tr>
+            ))}
+          </tbody></table>
+        )}
+      </Modal>
+    );
+  };
+
   const renderStock = () => {
     const orItems = gold.filter((it) => goldCat(it) === "or");
     const bijouxItems = gold.filter((it) => goldCat(it) === "bijou");
@@ -1724,7 +1803,7 @@ export default function App() {
             <tbody>
               {list.length === 0 ? <tr><td colSpan={7} className="muted small">Aucun article dans cette catégorie.</td></tr> : list.map((it) => (
                 <tr key={it.id}>
-                  <td><strong>{it.type}</strong></td>
+                  <td><button className="name-link" onClick={() => setProductView({ kind: "gold", item: it })}>{it.type}</button></td>
                   <td className="muted">{it.desc}</td>
                   <td><Badge k={it.karat} /></td>
                   <td className="r num">{g(it.weight)}</td>
@@ -1765,7 +1844,7 @@ export default function App() {
             <tbody>
               {divers.map((it) => (
                 <tr key={it.id} className={it.qty <= it.min ? "warn-row" : ""}>
-                  <td><strong>{it.name}</strong>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
+                  <td><button className="name-link" onClick={() => setProductView({ kind: "divers", item: it })}>{it.name}</button>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
                   <td className="muted">{it.cat}</td>
                   <td className="r num">{it.qty} {it.unit}</td>
                   <td className="r num">{fcfa(it.cost)}</td>
@@ -1982,6 +2061,42 @@ export default function App() {
             </table>
           )}
         </div>
+
+        {(() => {
+          const byMonth = {};
+          closures.forEach((c) => {
+            const mk = c.date.slice(0, 7);
+            if (!byMonth[mk]) byMonth[mk] = { month: mk, n: 0, ca: 0, rachats: 0, depenses: 0, ecart: 0 };
+            byMonth[mk].n += 1; byMonth[mk].ca += c.caTotal || 0; byMonth[mk].rachats += c.rachats || 0;
+            byMonth[mk].depenses += c.depenses || 0; byMonth[mk].ecart += c.ecart || 0;
+          });
+          const months = Object.values(byMonth).sort((a, b) => b.month.localeCompare(a.month));
+          if (!months.length) return null;
+          return (
+            <div className="card">
+              <div className="card-head">
+                <h3>Récap mensuel des clôtures <span className="count">{months.length}</span></h3>
+                <button className="btn btn-line" onClick={() => xlsxExport(`recap-mensuel-${TODAY}.xlsx`, { "Récap mensuel": months.map((mo) => ({ Mois: monthLabel(mo.month), Clôtures: mo.n, "CA encaissé": mo.ca, Rachats: mo.rachats, Dépenses: mo.depenses, "Écart cumulé": mo.ecart })) })}><Download size={15} /> Excel</button>
+              </div>
+              <table className="table">
+                <thead><tr><th>Mois</th><th className="r">Clôtures</th><th className="r">CA encaissé</th><th className="r">Rachats</th><th className="r">Dépenses</th><th className="r">Écart cumulé</th></tr></thead>
+                <tbody>
+                  {months.map((mo) => (
+                    <tr key={mo.month}>
+                      <td><strong>{monthLabel(mo.month)}</strong></td>
+                      <td className="r num">{mo.n}</td>
+                      <td className="r num pos">{fcfa(mo.ca)}</td>
+                      <td className="r num neg">{fcfa(mo.rachats)}</td>
+                      <td className="r num">{fcfa(mo.depenses)}</td>
+                      <td className={`r num ${mo.ecart === 0 ? "pos" : mo.ecart < 0 ? "neg" : ""}`}>{mo.ecart > 0 ? "+" : ""}{fcfa(mo.ecart)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small" style={{ margin: "10px 0 0" }}>Construit à partir de tes clôtures quotidiennes. L'écart cumulé additionne les écarts de chaque jour clôturé.</p>
+            </div>
+          );
+        })()}
       </>
     );
   };
@@ -2084,19 +2199,41 @@ export default function App() {
   };
 
   const renderReports = () => {
-    const topDivers = [...divers].map((it) => ({ ...it, sold: sales.filter((s) => s.kind === "divers" && s.label.startsWith(it.name)).length }))
+    const pSales = sales.filter((s) => inPeriod(s.date, reportPeriod));
+    const pPurch = purchases.filter((p) => inPeriod(p.date, reportPeriod));
+    const pExp = expenses.filter((e) => inPeriod(e.date, reportPeriod));
+    const pCA = pSales.reduce((a, s) => a + s.total, 0);
+    const pMarge = pSales.reduce((a, s) => a + (s.total - s.cost), 0);
+    const pDep = pExp.reduce((a, e) => a + e.amount, 0);
+    const pNet = pMarge - pDep;
+    const pAchats = pPurch.reduce((a, p) => a + p.total, 0);
+    const topDivers = [...divers].map((it) => ({ ...it, sold: pSales.filter((s) => s.kind === "divers" && s.label.startsWith(it.name)).length }))
       .sort((a, b) => b.sold - a.sold).slice(0, 5);
+    const typeMap = {};
+    pSales.forEach((s) => {
+      const key = s.kind === "divers" ? (s.dName || s.label) : `${s.itemType || "Or"}${s.karat ? " " + s.karat + "K" : ""}`;
+      if (!typeMap[key]) typeMap[key] = { type: key, kind: s.kind, qty: 0, revenue: 0, marge: 0 };
+      typeMap[key].qty += s.kind === "divers" ? (s.dQty || 1) : 1;
+      typeMap[key].revenue += s.total;
+      typeMap[key].marge += s.total - s.cost;
+    });
+    const byType = Object.values(typeMap).sort((a, b) => b.revenue - a.revenue);
     return (
       <>
+        <div className="seg seg-lg seg-4">
+          {["today", "month", "year", "all"].map((p) => (
+            <button key={p} className={`seg-btn ${reportPeriod === p ? "active" : ""}`} onClick={() => setReportPeriod(p)}>{PERIOD_LABEL[p]}</button>
+          ))}
+        </div>
         <div className="kpis">
-          <Kpi icon={Receipt} label="Chiffre d'affaires (cumulé)" value={fcfa(m.totalVentes)} sub={`Marge brute ${fcfa(m.beneficeVentes)}`} tone="gold" />
-          <Kpi icon={TrendingDown} label="Dépenses & charges" value={fcfa(m.depensesTotal)} sub="loyer, salaires, etc." tone="clay" />
-          <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(m.beneficeNet)} sub="marge − dépenses" tone="green" />
-          <Kpi icon={Scale} label="Or en stock" value={g(m.stockOrWeight)} sub={fcfa(m.stockOrValue)} tone="gold" />
+          <Kpi icon={Receipt} label={`Chiffre d'affaires · ${PERIOD_LABEL[reportPeriod].toLowerCase()}`} value={fcfa(pCA)} sub={`Marge brute ${fcfa(pMarge)} · ${pSales.length} vente(s)`} tone="gold" />
+          <Kpi icon={ArrowDownLeft} label="Achats / rachats" value={fcfa(pAchats)} sub={`${pPurch.length} rachat(s)`} tone="clay" />
+          <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(pNet)} sub={`marge − dépenses (${fcfa(pDep)})`} tone="green" />
+          <Kpi icon={Scale} label="Or en stock (actuel)" value={g(m.stockOrWeight)} sub={fcfa(m.stockOrValue)} tone="gold" />
         </div>
         <div className="row2">
           <div className="card">
-            <div className="card-head"><h3>Ventes vs achats</h3></div>
+            <div className="card-head"><h3>Ventes vs achats</h3><span className="muted">tendance des derniers jours</span></div>
             <div style={{ height: 280 }}>
               <ResponsiveContainer>
                 <BarChart data={dailySeries} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
@@ -2118,6 +2255,28 @@ export default function App() {
               <tbody>{topDivers.map((it) => <tr key={it.id}><td>{it.name}</td><td className="r num">{it.sold}</td><td className="r num">{it.qty}</td></tr>)}</tbody>
             </table>
           </div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Ventes par type de produit <span className="count">{byType.length}</span></h3>
+            <button className="btn btn-line" onClick={() => xlsxExport(`ventes-par-type-${TODAY}.xlsx`, { "Par type": byType.map((t) => ({ Produit: t.type, Catégorie: KIND_LABEL[t.kind] || "Or", "Qté vendue": t.qty, "Chiffre d'affaires": t.revenue, Marge: t.marge })) })}><Download size={15} /> Excel</button>
+          </div>
+          {byType.length === 0 ? <p className="muted small">Aucune vente enregistrée pour l'instant.</p> : (
+            <table className="table">
+              <thead><tr><th>Produit</th><th>Catégorie</th><th className="r">Qté vendue</th><th className="r">Chiffre d'affaires</th><th className="r">Marge</th></tr></thead>
+              <tbody>
+                {byType.map((t, i) => (
+                  <tr key={i}>
+                    <td><strong>{t.type}</strong></td>
+                    <td><span className={`pill ${t.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[t.kind] || "Or"}</span></td>
+                    <td className="r num">{t.qty}</td>
+                    <td className="r num pos">{fcfa(t.revenue)}</td>
+                    <td className="r num">{fcfa(t.marge)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </>
     );
@@ -2358,6 +2517,7 @@ export default function App() {
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
       {clientView && renderClientHistory()}
+      {productView && renderProductHistory()}
       {receipt && <ReceiptModal data={receipt} shop={shop} onClose={() => setReceipt(null)} />}
       {zView && <ZModal data={zView} shop={shop} onClose={() => setZView(null)} />}
       {acompteFor && <AcompteModal sale={acompteFor} balance={balanceFor(acompteFor)} onClose={() => setAcompteFor(null)} onSave={(p) => recordPayment(acompteFor, p)} />}
@@ -2500,6 +2660,8 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 
 .seg { display:inline-flex; gap:4px; background:#efe8d9; border-radius:10px; padding:4px; margin-bottom:14px; }
 .seg-3 { display:flex; width:100%; }
+.seg-4 { display:flex; width:100%; }
+.seg-4 .seg-btn { flex:1; justify-content:center; padding:8px 6px; font-size:12.5px; }
 .head-btns { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .req-msg { background:#f6efe1; border:1px solid var(--line); border-radius:11px; padding:14px 16px; color:var(--ink); font-size:14.5px; line-height:1.5; }
 .name-link { border:0; background:none; padding:0; font:inherit; color:var(--gold2); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
