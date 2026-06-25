@@ -679,7 +679,7 @@ function BackupModal({ mode, json, onClose, onImport }) {
   );
 }
 
-function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed, logo }) {
+function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, onContact, trialUsed, logo }) {
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const submit = () => {
@@ -694,35 +694,25 @@ function ActivationScreen({ onActivate, onAdmin, onTrial, onChoose, trialUsed, l
         <>
           <div className="trial-over">
             <strong>Ton essai gratuit de 7 jours est terminé.</strong>
-            <span>L'application est bloquée. Choisis une formule pour continuer — ton revendeur sera prévenu et t'enverra un code d'activation.</span>
-          </div>
-          <div className="formulas">
-            {PAID_FORMULAS.map((k) => {
-              const f = FORMULAS[k];
-              return (
-                <div className="formula" key={k}>
-                  <div className="formula-top"><span className="formula-name">{f.name}</span><span className="formula-price">{f.priceLabel}</span></div>
-                  <ul className="formula-feats">{f.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
-                  <button className="btn btn-gold formula-btn" onClick={() => onChoose(k)}>Choisir {f.name}</button>
-                </div>
-              );
-            })}
+            <span>L'application est bloquée. Contacte ton revendeur pour obtenir un code d'activation, puis saisis-le ci-dessous.</span>
           </div>
           <div className="act-box">
             <p className="lock-q">J'ai reçu un code de mon revendeur</p>
             <input className="act-input num" value={code} onChange={(e) => { setCode(e.target.value); setErr(""); }} placeholder="AOR-X-XXXX-XXXX" onKeyDown={(e) => e.key === "Enter" && submit()} />
             {err && <p className="lock-err">{err}</p>}
             <button className="btn btn-gold act-btn" onClick={submit}>Activer</button>
+            <div className="act-or">— ou —</div>
+            <button className="btn btn-line act-btn" onClick={onContact}>Contacter le revendeur</button>
           </div>
         </>
       ) : (
         <div className="act-box">
-          <p className="lock-intro">Teste gratuitement l'application pendant 7 jours, sans engagement.</p>
-          <button className="btn btn-gold act-btn" onClick={onTrial}>Démarrer l'essai gratuit (7 jours)</button>
-          <div className="act-or">— ou, si tu as déjà un code —</div>
+          <p className="lock-intro">Pour utiliser l'application, saisis le code fourni par ton revendeur (code d'essai ou d'abonnement).</p>
           <input className="act-input num" value={code} onChange={(e) => { setCode(e.target.value); setErr(""); }} placeholder="AOR-X-XXXX-XXXX" onKeyDown={(e) => e.key === "Enter" && submit()} />
           {err && <p className="lock-err">{err}</p>}
-          <button className="btn btn-line act-btn" onClick={submit}>Activer avec un code</button>
+          <button className="btn btn-gold act-btn" onClick={submit}>Activer</button>
+          <div className="act-or">— ou —</div>
+          <button className="btn btn-line act-btn" onClick={onContact}>Contacter le revendeur</button>
         </div>
       )}
 
@@ -1483,6 +1473,12 @@ export default function App() {
     const phone = String(resellerPhone || "").replace(/[^\d]/g, "");
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     setFormulaReq({ name: f.name, msg, url, hasPhone: !!phone });
+  };
+  const contactReseller = () => {
+    const msg = `Bonjour, je souhaite activer / renouveler mon abonnement Atelier d'Or${shop?.name ? ` (boutique : ${shop.name})` : ""}.`;
+    const phone = String(resellerPhone || "").replace(/[^\d]/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    setFormulaReq({ name: "abonnement", msg, url, hasPhone: !!phone });
   };
   const goAdmin = () => { try { window.location.hash = "admin-create"; } catch (e) { /* */ } setRoute("admin"); };
   const exitAdmin = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
@@ -2553,7 +2549,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
   }
   if (!license) {
-    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} trialUsed={trialUsed} logo={shop.logo} />{formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}</div>);
+    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} onContact={contactReseller} trialUsed={trialUsed} logo={shop.logo} />{formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}</div>);
   }
   if (!currentUser) {
     return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} logo={shop.logo} /></div>);
