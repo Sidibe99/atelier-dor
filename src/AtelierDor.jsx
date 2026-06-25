@@ -9,6 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from "recharts";
+import * as XLSX from "xlsx";
 
 /* ----------------------------- utilitaires ------------------------------ */
 const nf = new Intl.NumberFormat("fr-FR");
@@ -21,10 +22,39 @@ const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); retur
 const TODAY = iso(new Date());
 const dateFr = (s) => { const [y, m, d] = s.split("-"); return `${d}/${m}/${y.slice(2)}`; };
 
+/* ----------------------------- Excel (xlsx) ----------------------------- */
+const xlsxExport = (filename, sheets) => {
+  try {
+    const wb = XLSX.utils.book_new();
+    Object.entries(sheets).forEach(([name, rows]) => {
+      const ws = XLSX.utils.json_to_sheet(rows && rows.length ? rows : [{}]);
+      XLSX.utils.book_append_sheet(wb, ws, String(name).slice(0, 31));
+    });
+    XLSX.writeFile(wb, filename);
+  } catch (e) { try { window.alert("Export Excel impossible sur cet appareil."); } catch (_) { /* */ } }
+};
+const xlsxRead = (file, cb) => {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: "array" });
+      const first = wb.SheetNames[0];
+      cb(XLSX.utils.sheet_to_json(wb.Sheets[first], { defval: "" }), wb);
+    } catch (err) { try { window.alert("Fichier Excel illisible."); } catch (_) { /* */ } }
+  };
+  r.readAsArrayBuffer(file);
+};
+const numOf = (v) => { const n = parseFloat(String(v).replace(/\s/g, "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+const pick = (row, keys) => { for (const k of keys) { for (const rk of Object.keys(row)) { if (rk.toLowerCase().trim() === k.toLowerCase()) return row[rk]; } } return ""; };
+
+
 const KARATS = [24, 22, 21, 18, 14];
 const OZ = 31.1034768;            // 1 once troy en grammes
 const PAY_METHODS = ["Espèces", "Wave", "Orange Money", "Banque"];
 const KIND_LABEL = { or: "Or", bijoux: "Bijoux", divers: "Divers" };
+const RAW_GOLD_TYPES = ["Lingot", "Pièce", "Débris", "Or brut", "Or"];
+const goldCat = (it) => it.cat || (RAW_GOLD_TYPES.includes(it.type) ? "or" : "bijou");
 const purity = (k) => k / 24;     // pureté (24K = or pur)
 const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée en direct)
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
@@ -401,13 +431,16 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
 }
 
 function GoldModal({ item, onClose, onSave }) {
-  const [f, setF] = useState(item || { type: "Bague", desc: "", karat: 21, weight: "", qty: 1 });
+  const [f, setF] = useState(item ? { cat: goldCat(item), ...item } : { type: "Bague", desc: "", karat: 21, weight: "", qty: 1, cat: "bijou" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.desc && f.weight && f.qty;
   return (
     <Modal title={item ? "Modifier l'article" : "Ajouter au stock or"} onClose={onClose}
       footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" disabled={!valid} onClick={() => onSave({ ...f, weight: parseFloat(f.weight), qty: parseInt(f.qty) })}>Enregistrer</button></div>}>
       <div className="grid2">
+        <Field label="Catégorie">
+          <select className="input" value={f.cat} onChange={(e) => set("cat", e.target.value)}><option value="bijou">Bijou</option><option value="or">Or brut (lingot, débris…)</option></select>
+        </Field>
         <Field label="Type">
           <select className="input" value={f.type} onChange={(e) => set("type", e.target.value)}>{["Bague", "Chaîne", "Bracelet", "Boucles", "Collier", "Pendentif", "Alliance", "Lingot", "Pièce", "Débris"].map((t) => <option key={t}>{t}</option>)}</select>
         </Field>
@@ -419,6 +452,16 @@ function GoldModal({ item, onClose, onSave }) {
       </div>
       <Field label="Description"><input className="input" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="ex : Bague chevalière homme" /></Field>
     </Modal>
+  );
+}
+
+function XlsxImportBtn({ label, onFile }) {
+  const ref = useRef(null);
+  return (
+    <>
+      <button className="btn btn-line" onClick={() => ref.current && ref.current.click()}><Upload size={15} /> {label}</button>
+      <input ref={ref} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { onFile(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+    </>
   );
 }
 
@@ -1400,13 +1443,59 @@ export default function App() {
     { id: "credits", label: "Crédits & dettes", icon: Receipt },
     { id: "caisse", label: "Clôture de caisse", icon: Banknote },
     { id: "depenses", label: "Dépenses", icon: TrendingDown },
-    { id: "equipe", label: "Équipe", icon: ShieldCheck },
     { id: "reports", label: "Rapports", icon: BarChart3 },
     { id: "cours", label: "Cours de l'or", icon: Coins },
+    { id: "settings", label: "Paramètres", icon: Settings },
     { id: "abo", label: "Abonnement", icon: Wallet },
   ];
   const go = (id) => { setView(id); setNavOpen(false); };
   const PIE = ["#b8862f", "#d9a441", "#8a6520", "#caa45e", "#6e4f1c"];
+
+  /* ----------------------- Excel : export / import ---------------------- */
+  const rowsVentes = () => sales.map((s) => ({ Date: dateFr(s.date), Type: KIND_LABEL[s.kind] || "Or", Détail: s.label, Client: s.client || "", Vendeur: s.by || "", Paiement: s.pay || "", Total: s.total, Payé: paidFor(s.id), Reste: Math.max(0, balanceFor(s)), Coût: s.cost, Marge: s.total - s.cost }));
+  const rowsAchats = () => purchases.map((p) => ({ Date: dateFr(p.date), Client: p.client || "", Carat: p.karat, "Poids (g)": p.weight, "Prix/g": p.ppg, Total: p.total, Payé: purchasePaidFor(p.id), Reste: Math.max(0, purchaseBalance(p)), Note: p.note || "" }));
+  const rowsGold = (list) => list.map((it) => ({ Catégorie: goldCat(it) === "or" ? "Or brut" : "Bijou", Type: it.type, Description: it.desc || "", Carat: it.karat, "Poids (g)": it.weight, Qté: it.qty }));
+  const rowsDivers = () => divers.map((it) => ({ Désignation: it.name, Catégorie: it.cat, Qté: it.qty, Unité: it.unit, Coût: it.cost, Vente: it.price, "Seuil min": it.min }));
+  const rowsClients = () => clients.map((c) => ({ Nom: c.name, Téléphone: c.phone || "", Note: c.note || "" }));
+  const rowsDepenses = () => expenses.map((e) => ({ Date: dateFr(e.date), Libellé: e.label, Catégorie: e.cat, Paiement: e.pay, Montant: e.amount }));
+
+  const exportAllXlsx = () => xlsxExport(`atelier-dor-${TODAY}.xlsx`, {
+    "Ventes": rowsVentes(), "Achats": rowsAchats(),
+    "Stock or": rowsGold(gold.filter((it) => goldCat(it) === "or")),
+    "Stock bijoux": rowsGold(gold.filter((it) => goldCat(it) === "bijou")),
+    "Divers": rowsDivers(), "Clients": rowsClients(), "Dépenses": rowsDepenses(),
+  });
+
+  const importGold = (file) => xlsxRead(file, (rows) => {
+    const add = rows.map((r) => ({
+      id: uid(), type: pick(r, ["Type"]) || "Bague", desc: pick(r, ["Description", "Desc"]),
+      karat: parseInt(numOf(pick(r, ["Carat", "Karat"]))) || 21,
+      weight: numOf(pick(r, ["Poids (g)", "Poids", "Weight"])),
+      qty: parseInt(numOf(pick(r, ["Qté", "Quantité", "Quantite", "Qty"]))) || 1,
+      cat: String(pick(r, ["Catégorie", "Categorie", "Cat"])).toLowerCase().startsWith("or") ? "or" : "bijou",
+    })).filter((x) => x.weight > 0);
+    if (!add.length) { window.alert("Aucune ligne valide (colonnes attendues : Type, Description, Carat, Poids (g), Qté, Catégorie)."); return; }
+    setGold((arr) => [...add, ...arr]); window.alert(`${add.length} article(s) or importé(s).`);
+  });
+  const importDivers = (file) => xlsxRead(file, (rows) => {
+    const add = rows.map((r) => ({
+      id: uid(), name: pick(r, ["Désignation", "Designation", "Nom", "Name"]),
+      cat: pick(r, ["Catégorie", "Categorie"]) || "Fourniture",
+      qty: parseInt(numOf(pick(r, ["Qté", "Quantité", "Quantite", "Qty"]))) || 0,
+      unit: pick(r, ["Unité", "Unite", "Unit"]) || "pièce",
+      cost: numOf(pick(r, ["Coût", "Cout", "Cost"])), price: numOf(pick(r, ["Vente", "Prix", "Price"])),
+      min: parseInt(numOf(pick(r, ["Seuil min", "Min"]))) || 0,
+    })).filter((x) => x.name);
+    if (!add.length) { window.alert("Aucune ligne valide (colonnes attendues : Désignation, Catégorie, Qté, Unité, Coût, Vente, Seuil min)."); return; }
+    setDivers((arr) => [...add, ...arr]); window.alert(`${add.length} article(s) divers importé(s).`);
+  });
+  const importClients = (file) => xlsxRead(file, (rows) => {
+    const add = rows.map((r) => ({ id: uid(), name: pick(r, ["Nom", "Name", "Client"]), phone: String(pick(r, ["Téléphone", "Telephone", "Phone", "Tel"])), note: pick(r, ["Note", "Remarque"]) }))
+      .filter((c) => c.name && !clients.find((x) => x.name === c.name));
+    if (!add.length) { window.alert("Aucun nouveau client (colonnes attendues : Nom, Téléphone, Note)."); return; }
+    setClients((arr) => [...arr, ...add]); window.alert(`${add.length} client(s) importé(s).`);
+  });
+
 
   const renderDash = () => (
     <>
@@ -1489,7 +1578,10 @@ export default function App() {
       <div className="card">
         <div className="card-head">
           <h3>Historique des ventes <span className="count">{sales.length}</span></h3>
-          <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>
+          <div className="head-btns">
+            <button className="btn btn-line" onClick={() => xlsxExport(`ventes-${TODAY}.xlsx`, { Ventes: rowsVentes() })}><Download size={15} /> Excel</button>
+            <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>
+          </div>
         </div>
         <table className="table">
           <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>Client</th><th>Vendeur</th><th>Paiement</th><th className="r">Marge</th><th className="r">Total</th><th></th></tr></thead>
@@ -1520,7 +1612,10 @@ export default function App() {
     <div className="card">
       <div className="card-head">
         <h3>Achats d'or (rachats clients) <span className="count">{purchases.length}</span></h3>
-        <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>
+        <div className="head-btns">
+          <button className="btn btn-line" onClick={() => xlsxExport(`achats-${TODAY}.xlsx`, { Achats: rowsAchats() })}><Download size={15} /> Excel</button>
+          <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>
+        </div>
       </div>
       <table className="table">
         <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th className="r">Payé</th><th></th></tr></thead>
@@ -1608,22 +1703,26 @@ export default function App() {
     );
   };
 
-  const renderStock = () => (
-    <>
-      <div className="seg seg-lg">
-        <button className={`seg-btn ${stockTab === "or" ? "active" : ""}`} onClick={() => setStockTab("or")}><Gem size={15} /> Or & bijoux <span className="count">{gold.length}</span></button>
-        <button className={`seg-btn ${stockTab === "divers" ? "active" : ""}`} onClick={() => setStockTab("divers")}><Hammer size={15} /> Divers / fournitures <span className="count">{divers.length}</span></button>
-      </div>
-      {stockTab === "or" ? (
+  const renderStock = () => {
+    const orItems = gold.filter((it) => goldCat(it) === "or");
+    const bijouxItems = gold.filter((it) => goldCat(it) === "bijou");
+    const goldTable = (list, title) => {
+      const wt = list.reduce((a, it) => a + it.weight * it.qty, 0);
+      const val = list.reduce((a, it) => a + it.weight * it.qty * prices[it.karat].vente, 0);
+      return (
         <div className="card">
           <div className="card-head">
-            <h3>Stock or — {g(m.stockOrWeight)} · {fcfa(m.stockOrValue)}</h3>
-            <button className="btn btn-gold" onClick={() => setModal({ type: "gold" })}><Plus size={16} /> Ajouter</button>
+            <h3>{title} — {g(wt)} · {fcfa(val)}</h3>
+            <div className="head-btns">
+              <button className="btn btn-line" onClick={() => xlsxExport(`stock-${title.toLowerCase().replace(/\s/g, "-")}-${TODAY}.xlsx`, { [title]: rowsGold(list) })}><Download size={15} /> Excel</button>
+              <XlsxImportBtn label="Importer" onFile={importGold} />
+              <button className="btn btn-gold" onClick={() => setModal({ type: "gold" })}><Plus size={16} /> Ajouter</button>
+            </div>
           </div>
           <table className="table">
             <thead><tr><th>Type</th><th>Description</th><th>Carat</th><th className="r">Poids u.</th><th className="r">Qté</th><th className="r">Valeur</th><th></th></tr></thead>
             <tbody>
-              {gold.map((it) => (
+              {list.length === 0 ? <tr><td colSpan={7} className="muted small">Aucun article dans cette catégorie.</td></tr> : list.map((it) => (
                 <tr key={it.id}>
                   <td><strong>{it.type}</strong></td>
                   <td className="muted">{it.desc}</td>
@@ -1640,11 +1739,26 @@ export default function App() {
             </tbody>
           </table>
         </div>
-      ) : (
+      );
+    };
+    return (
+    <>
+      <div className="seg seg-lg seg-3">
+        <button className={`seg-btn ${stockTab === "or" ? "active" : ""}`} onClick={() => setStockTab("or")}><Coins size={15} /> Or brut <span className="count">{orItems.length}</span></button>
+        <button className={`seg-btn ${stockTab === "bijoux" ? "active" : ""}`} onClick={() => setStockTab("bijoux")}><Gem size={15} /> Bijoux <span className="count">{bijouxItems.length}</span></button>
+        <button className={`seg-btn ${stockTab === "divers" ? "active" : ""}`} onClick={() => setStockTab("divers")}><Hammer size={15} /> Divers <span className="count">{divers.length}</span></button>
+      </div>
+      {stockTab === "or" && goldTable(orItems, "Or brut")}
+      {stockTab === "bijoux" && goldTable(bijouxItems, "Bijoux")}
+      {stockTab === "divers" && (
         <div className="card">
           <div className="card-head">
             <h3>Divers — valeur {fcfa(m.stockDiversValue)}</h3>
-            <button className="btn btn-gold" onClick={() => setModal({ type: "divers" })}><Plus size={16} /> Ajouter</button>
+            <div className="head-btns">
+              <button className="btn btn-line" onClick={() => xlsxExport(`stock-divers-${TODAY}.xlsx`, { Divers: rowsDivers() })}><Download size={15} /> Excel</button>
+              <XlsxImportBtn label="Importer" onFile={importDivers} />
+              <button className="btn btn-gold" onClick={() => setModal({ type: "divers" })}><Plus size={16} /> Ajouter</button>
+            </div>
           </div>
           <table className="table">
             <thead><tr><th>Désignation</th><th>Catégorie</th><th className="r">Qté</th><th className="r">Coût</th><th className="r">Vente</th><th className="r">Marge u.</th><th></th></tr></thead>
@@ -1668,13 +1782,18 @@ export default function App() {
         </div>
       )}
     </>
-  );
+    );
+  };
 
   const renderClients = () => (
     <div className="card">
       <div className="card-head">
         <h3>Clients <span className="count">{clients.length}</span></h3>
-        <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>
+        <div className="head-btns">
+          <button className="btn btn-line" onClick={() => xlsxExport(`clients-${TODAY}.xlsx`, { Clients: rowsClients() })}><Download size={15} /> Excel</button>
+          <XlsxImportBtn label="Importer" onFile={importClients} />
+          <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>
+        </div>
       </div>
       <div className="client-grid">
         {clients.map((c) => {
@@ -1881,7 +2000,10 @@ export default function App() {
         <div className="card">
           <div className="card-head">
             <h3>Dépenses & charges <span className="count">{expenses.length}</span></h3>
-            <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>
+            <div className="head-btns">
+              <button className="btn btn-line" onClick={() => xlsxExport(`depenses-${TODAY}.xlsx`, { Dépenses: rowsDepenses() })}><Download size={15} /> Excel</button>
+              <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>
+            </div>
           </div>
           {expenses.length === 0 ? (
             <p className="muted small">Aucune dépense enregistrée. Ajoute loyer, électricité, salaires… pour suivre ton bénéfice net.</p>
@@ -1916,6 +2038,7 @@ export default function App() {
     const nbVend = users.filter((u) => u.role === "vendeur").length;
     return (
     <>
+      <button className="btn btn-line btn-xs" style={{ marginBottom: 14 }} onClick={() => go("settings")}>← Retour aux paramètres</button>
       {f && (
         <div className="card lic-card">
           <div className="card-head"><h3>Formule active</h3><span className={`pill ${f.trial ? "pill-ink" : "pill-gold"}`}>{f.name}</span></div>
@@ -2056,6 +2179,18 @@ export default function App() {
         <p className="src-note">Sources en direct : prix de l'or via gold-api.com · taux de change via <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Exchange Rate API</a>.</p>
       </div>
 
+      <p className="disclaim">Données de marché à titre indicatif (pas un conseil financier). L'actualisation reflète le cours du moment ; pour un flux à la seconde près façon salle de marché, il faudra brancher un fournisseur de données dédié lors de la mise en ligne.</p>
+    </>
+  );
+
+  const renderSettings = () => (
+    <>
+      <div className="card">
+        <div className="card-head"><h3><ShieldCheck size={15} /> Utilisateurs & équipe</h3><span className="muted">{users.length} compte(s)</span></div>
+        <p className="muted small" style={{ margin: "0 0 14px" }}>Gère les comptes de connexion (patron et vendeurs) : qui peut se connecter et avec quels droits.</p>
+        <button className="btn btn-gold" onClick={() => go("equipe")}><Users size={15} /> Gérer les utilisateurs</button>
+      </div>
+
       <div className="card">
         <div className="card-head"><h3><Receipt size={15} /> Boutique (en-tête des reçus)</h3><span className="muted">Apparaît en haut de chaque ticket</span></div>
         <Field label="Logo de la boutique"><LogoField logo={shop.logo} onChange={(v) => setShop((s) => ({ ...s, logo: v }))} /></Field>
@@ -2068,7 +2203,7 @@ export default function App() {
 
       <div className="card">
         <div className="card-head">
-          <h3>Données & sauvegarde</h3>
+          <h3><Download size={15} /> Données & sauvegarde</h3>
           <span className="muted">{saveState === "saving" ? "Enregistrement…" : saveState === "error" ? "Indisponible" : "À jour"}</span>
         </div>
         <p className="muted small" style={{ margin: "0 0 14px" }}>
@@ -2079,17 +2214,16 @@ export default function App() {
             <div className="data-actions">
               <button className="btn btn-gold" onClick={() => setBackup("export")}><Download size={15} /> Exporter</button>
               <button className="btn btn-line" onClick={() => setBackup("import")}><Upload size={15} /> Importer</button>
+              <button className="btn btn-line" onClick={exportAllXlsx}><Download size={15} /> Excel (tout)</button>
               <button className="btn btn-line danger" onClick={resetData}><Trash2 size={15} /> Réinitialiser</button>
             </div>
-            <p className="note-box">Exporter crée un fichier (ou un texte à copier) contenant toute ta boutique. Importer le restaure — sur ce téléphone ou un autre. Réinitialiser revient aux données d'exemple.</p>
+            <p className="note-box">Exporter crée un fichier (ou un texte à copier) contenant toute ta boutique. Importer le restaure — sur ce téléphone ou un autre. « Excel (tout) » crée un classeur avec une feuille par catégorie (ventes, achats, stock, clients, dépenses). Réinitialiser revient aux données d'exemple.</p>
             {license && <p className="muted small" style={{ margin: "10px 0 0" }}>Licence : {license.lifetime ? "à vie" : `valable jusqu'au ${dateFull(license.expiry)}`}</p>}
           </>
         ) : (
           <p className="muted small" style={{ margin: 0 }}>Seul le patron peut exporter, importer ou réinitialiser les données.</p>
         )}
       </div>
-
-      <p className="disclaim">Données de marché à titre indicatif (pas un conseil financier). L'actualisation reflète le cours du moment ; pour un flux à la seconde près façon salle de marché, il faudra brancher un fournisseur de données dédié lors de la mise en ligne.</p>
     </>
   );
 
@@ -2134,8 +2268,8 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, abo: renderAbo };
-  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", abo: "Abonnement" };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, settings: renderSettings, abo: renderAbo };
+  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
@@ -2150,7 +2284,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} logo={shop.logo} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "reports", "abo"].includes(n.id));
+  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo"].includes(n.id));
   const cur = navItems.some((n) => n.id === view) ? view : "dash";
 
   return (
@@ -2186,7 +2320,7 @@ export default function App() {
       <div className="main">
         <header className="topbar">
           <div className="top-left">
-            <button className="icon-btn menu-btn" onClick={() => setNavOpen(true)}><Menu size={20} /></button>
+            <button className="icon-btn menu-btn" onClick={() => setNavOpen((o) => !o)}><Menu size={20} /></button>
             <div>
               <h1>{titles[cur]}</h1>
               <span className="muted small">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
@@ -2294,6 +2428,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
   border-radius:9px; padding:7px 11px; color:var(--muted); }
 .search input { border:0; background:none; outline:none; font:inherit; width:130px; color:var(--text); }
 .menu-btn { display:none; }
+.menu-btn:focus, .menu-btn:focus-visible { outline:none; }
 
 .content { padding:24px; max-width:1240px; width:100%; }
 
@@ -2365,6 +2500,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 
 .seg { display:inline-flex; gap:4px; background:#efe8d9; border-radius:10px; padding:4px; margin-bottom:14px; }
 .seg-3 { display:flex; width:100%; }
+.head-btns { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .req-msg { background:#f6efe1; border:1px solid var(--line); border-radius:11px; padding:14px 16px; color:var(--ink); font-size:14.5px; line-height:1.5; }
 .name-link { border:0; background:none; padding:0; font:inherit; color:var(--gold2); font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
 .name-link:hover { color:var(--gold); }
@@ -2596,7 +2732,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .sidebar.open { transform:translateX(0); }
   .scrim { display:block; position:fixed; inset:0; background:rgba(28,22,17,.4); z-index:35; }
   .main { margin-left:0; }
-  .menu-btn { display:grid; }
+  .menu-btn { display:grid; width:38px; height:38px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--ink); flex:none; }
   .content { padding:16px; }
   .grid2 { grid-template-columns:1fr; }
   .manual { grid-template-columns:1fr; }
