@@ -518,24 +518,39 @@ function ClientModal({ item, onClose, onSave }) {
 }
 
 function ExpenseModal({ item, onClose, onSave }) {
-  const [f, setF] = useState(item || { label: "", cat: "Loyer", amount: "", pay: "Espèces" });
+  const STD = ["Loyer", "Salaire", "Électricité", "Eau", "Fournitures", "Transport", "Taxe / impôt", "Remboursement", "Autre"];
+  const [f, setF] = useState(() => {
+    if (!item) return { label: "", cat: "Loyer", amount: "", pay: "Espèces", note: "", catOther: "" };
+    const isStd = STD.includes(item.cat);
+    return { ...item, note: item.note || "", cat: isStd ? item.cat : "Autre", catOther: isStd ? "" : item.cat };
+  });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.label && f.amount;
+  const valid = f.label && f.amount && (f.cat !== "Autre" || f.catOther.trim());
+  const submit = () => {
+    const { catOther, ...rest } = f;
+    onSave({ ...rest, cat: f.cat === "Autre" && catOther.trim() ? catOther.trim() : f.cat, amount: parseFloat(f.amount) || 0 });
+  };
   return (
     <Modal title={item ? "Modifier la dépense" : "Nouvelle dépense"} onClose={onClose}
-      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ ...f, amount: parseFloat(f.amount) || 0 })}>Enregistrer</button></div>}>
+      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-clay" disabled={!valid} onClick={submit}>Enregistrer</button></div>}>
       <Field label="Libellé"><input className="input" value={f.label} onChange={(e) => set("label", e.target.value)} placeholder="ex : Facture électricité" /></Field>
       <div className="grid2">
         <Field label="Catégorie">
           <select className="input" value={f.cat} onChange={(e) => set("cat", e.target.value)}>
-            {["Loyer", "Salaire", "Électricité", "Eau", "Fournitures", "Transport", "Taxe / impôt", "Remboursement", "Autre"].map((c) => <option key={c}>{c}</option>)}
+            {STD.map((c) => <option key={c}>{c}</option>)}
           </select>
         </Field>
         <Field label="Montant"><input className="input num" type="number" value={f.amount} onChange={(e) => set("amount", e.target.value)} placeholder="0" /></Field>
+      </div>
+      {f.cat === "Autre" && (
+        <Field label="Préciser de quoi il s'agit"><input className="input" value={f.catOther} onChange={(e) => set("catOther", e.target.value)} placeholder="ex : réparation enseigne, don, frais bancaires…" /></Field>
+      )}
+      <div className="grid2">
         <Field label="Paiement">
           <select className="input" value={f.pay} onChange={(e) => set("pay", e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
         </Field>
       </div>
+      <Field label="Détail / motif (optionnel)"><input className="input" value={f.note} onChange={(e) => set("note", e.target.value)} placeholder="ex : avance sur salaire de juin, fournisseur X…" /></Field>
     </Modal>
   );
 }
@@ -1410,7 +1425,7 @@ export default function App() {
   const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
   const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
   const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
-  const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, ...it }, ...arr]); setModal(null); };
+  const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); setModal(null); };
   const saveUser = (it) => {
     const f = license ? FORMULAS[license.plan] : null;
     if (f && !it.id) {
@@ -1510,11 +1525,11 @@ export default function App() {
 
   /* ----------------------- Excel : export / import ---------------------- */
   const rowsVentes = () => sales.map((s) => ({ Date: dateFr(s.date), Type: KIND_LABEL[s.kind] || "Or", Détail: s.label, Client: s.client || "", Vendeur: s.by || "", Paiement: s.pay || "", Total: s.total, Payé: paidFor(s.id), Reste: Math.max(0, balanceFor(s)), Coût: s.cost, Marge: s.total - s.cost }));
-  const rowsAchats = () => purchases.map((p) => ({ Date: dateFr(p.date), Client: p.client || "", Carat: p.karat, "Poids (g)": p.weight, "Prix/g": p.ppg, Total: p.total, Payé: purchasePaidFor(p.id), Reste: Math.max(0, purchaseBalance(p)), Note: p.note || "" }));
+  const rowsAchats = () => purchases.map((p) => ({ Date: dateFr(p.date), Client: p.client || "", Carat: p.karat, "Poids (g)": p.weight, "Prix/g": p.ppg, Total: p.total, Payé: purchasePaidFor(p.id), Reste: Math.max(0, purchaseBalance(p)), Note: p.note || "", Par: p.by || "" }));
   const rowsGold = (list) => list.map((it) => ({ Catégorie: goldCat(it) === "or" ? "Or brut" : "Bijou", Type: it.type, Description: it.desc || "", Carat: it.karat, "Poids (g)": it.weight, Qté: it.qty }));
   const rowsDivers = () => divers.map((it) => ({ Désignation: it.name, Catégorie: it.cat, Qté: it.qty, Unité: it.unit, Coût: it.cost, Vente: it.price, "Seuil min": it.min }));
   const rowsClients = () => clients.map((c) => ({ Nom: c.name, Téléphone: c.phone || "", Note: c.note || "", "Fournisseur pro": c.pro ? "Oui" : "" }));
-  const rowsDepenses = () => expenses.map((e) => ({ Date: dateFr(e.date), Libellé: e.label, Catégorie: e.cat, Paiement: e.pay, Montant: e.amount }));
+  const rowsDepenses = () => expenses.map((e) => ({ Date: dateFr(e.date), Libellé: e.label, Catégorie: e.cat, Motif: e.note || "", Paiement: e.pay, Par: e.by || "", Montant: e.amount }));
 
   const exportAllXlsx = () => xlsxExport(`atelier-dor-${TODAY}.xlsx`, {
     "Ventes": rowsVentes(), "Achats": rowsAchats(),
@@ -1678,7 +1693,7 @@ export default function App() {
         </div>
       </div>
       <table className="table">
-        <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th className="r">Payé</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th>Par</th><th className="r">Payé</th><th></th></tr></thead>
         <tbody>
           {purchases.map((p) => {
             const bal = purchaseBalance(p);
@@ -1690,6 +1705,7 @@ export default function App() {
               <td className="r num">{g(p.weight)}</td>
               <td className="r num">{fcfa(p.ppg)}</td>
               <td className="muted">{p.note}</td>
+              <td className="muted">{p.by || "—"}</td>
               <td className="r num neg">
                 −{fcfa(purchasePaidFor(p.id))}
                 {bal > 0 && <div className="mini-warn">reste {fcfa(bal)}</div>}
@@ -2212,14 +2228,15 @@ export default function App() {
             <p className="muted small">Aucune dépense enregistrée. Ajoute loyer, électricité, salaires… pour suivre ton bénéfice net.</p>
           ) : (
             <table className="table">
-              <thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Paiement</th><th className="r">Montant</th><th></th></tr></thead>
+              <thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Paiement</th><th>Par</th><th className="r">Montant</th><th></th></tr></thead>
               <tbody>
                 {expenses.map((e) => (
                   <tr key={e.id}>
                     <td className="num">{dateFr(e.date)}</td>
-                    <td><strong>{e.label}</strong></td>
+                    <td><strong>{e.label}</strong>{e.note && <div className="muted small">{e.note}</div>}</td>
                     <td><span className="pill pill-ink">{e.cat}</span></td>
                     <td className="muted">{e.pay}</td>
+                    <td className="muted">{e.by || "—"}</td>
                     <td className="r num neg">−{fcfa(e.amount)}</td>
                     <td className="r"><div className="rowbtns">
                       <button className="icon-btn" onClick={() => setModal({ type: "expense", data: e })}><Pencil size={15} /></button>
