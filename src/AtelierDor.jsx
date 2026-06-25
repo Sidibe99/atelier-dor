@@ -755,9 +755,10 @@ function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
 
   const statusOf = (s) => {
     if (s.status === "suspended") return { label: "Suspendue", tone: "red" };
-    if (s.expiry && s.expiry < TODAY) return { label: "Expirée", tone: "red" };
-    if (s.expiry) {
-      const days = Math.ceil((new Date(s.expiry).getTime() - new Date(TODAY).getTime()) / 86400000);
+    const exp = s.expiry ? String(s.expiry).slice(0, 10) : "";
+    if (exp && exp < TODAY) return { label: "Expirée", tone: "red" };
+    if (exp) {
+      const days = Math.ceil((new Date(exp).getTime() - new Date(TODAY).getTime()) / 86400000);
       if (days <= 7) return { label: days <= 0 ? "Expire aujourd'hui" : `Expire dans ${days}j`, tone: "amber" };
     }
     return { label: "Active", tone: "green" };
@@ -799,7 +800,8 @@ function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
                   <div className="shop-meta">
                     <span className={`pill pill-${st.tone}`}>{st.label}</span>
                     {s.plan && FORMULAS[s.plan] && <span className="pill pill-plan">{FORMULAS[s.plan].name}</span>}
-                    {s.expiry && <span className="muted small">Fin : {dateFr(s.expiry)}</span>}
+                    {s.plan && FORMULAS[s.plan] && <span className="muted small">{FORMULAS[s.plan].priceLabel}</span>}
+                    {s.expiry && <span className="muted small">Fin : {dateFr(String(s.expiry).slice(0, 10))}</span>}
                     {s.phone && <span className="muted small">{s.phone}</span>}
                   </div>
                 </div>
