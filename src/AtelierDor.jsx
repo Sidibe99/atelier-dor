@@ -786,6 +786,81 @@ function PricingModal({ onClose, onSaved }) {
   );
 }
 
+function PaymentsModal({ shop, onClose }) {
+  const [list, setList] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("Espèces");
+  const [paidOn, setPaidOn] = useState(TODAY);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const { data, error } = await supabase.from("payments").select("*").eq("shop_id", shop.id).order("paid_on", { ascending: false });
+      if (error) throw error;
+      setList(data || []);
+    } catch (e) { setErr("Impossible de charger les paiements. Vérifie ta connexion."); }
+    finally { setLoading(false); }
+  }, [shop.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    const amt = parseInt(amount, 10) || 0;
+    if (amt <= 0) { setErr("Indique un montant."); return; }
+    setBusy(true); setErr("");
+    try {
+      const { error } = await supabase.from("payments").insert({ shop_id: shop.id, amount: amt, method, paid_on: paidOn, note: note.trim() || null });
+      if (error) throw error;
+      setAmount(""); setNote("");
+      await load();
+    } catch (e) { setErr("Enregistrement impossible. Vérifie ta connexion."); }
+    finally { setBusy(false); }
+  };
+
+  const total = (list || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  return (
+    <Modal
+      title="Paiements"
+      sub={shop.name}
+      onClose={onClose}
+      footer={<button className="btn btn-line" onClick={onClose}>Fermer</button>}>
+      <div className="pay-form">
+        <Field label="Montant"><input className="act-input" type="number" min="0" value={amount} onChange={(e) => { setAmount(e.target.value); setErr(""); }} placeholder="Ex. 5000" /></Field>
+        <Field label="Moyen"><select className="act-input" value={method} onChange={(e) => setMethod(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select></Field>
+        <Field label="Date"><input className="act-input" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
+        <Field label="Note (facultatif)"><input className="act-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. renouvellement 1 mois" /></Field>
+        {err && <p className="lock-err">{err}</p>}
+        <button className="btn btn-gold" onClick={add} disabled={busy}>{busy ? "…" : "Enregistrer le paiement"}</button>
+      </div>
+      <div className="pay-hist">
+        <div className="pay-hist-top"><strong>Historique</strong>{list && list.length > 0 && <span className="muted small">Total : {fcfa(total)}</span>}</div>
+        {loading ? (
+          <p className="muted">Chargement…</p>
+        ) : !list ? (
+          <p className="lock-err">{err}</p>
+        ) : list.length === 0 ? (
+          <p className="muted small">Aucun paiement enregistré.</p>
+        ) : (
+          <div className="pay-list">
+            {list.map((p) => (
+              <div className="pay-item" key={p.id}>
+                <span className="pay-amt">{fcfa(p.amount)}</span>
+                <span className="pill pill-plan">{p.method}</span>
+                <span className="muted small">{dateFr(String(p.paid_on).slice(0, 10))}</span>
+                {p.note && <span className="muted small">{p.note}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -877,6 +952,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
                 </div>
                 <div className="shop-actions">
                   {wa && <a className="btn btn-line" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  <button className="btn btn-line" onClick={() => setModal({ mode: "payments", shop: s })}>Paiements</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "renew", shop: s })}><RefreshCw size={15} /> Renouveler</button>
                   <button className={`btn ${s.status === "suspended" ? "btn-gold" : "btn-line"}`} onClick={() => toggleStatus(s)}>{s.status === "suspended" ? "Réactiver" : "Suspendre"}</button>
                 </div>
@@ -891,6 +967,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "create" && <ShopFormModal mode="create" onClose={() => setModal(null)} onSubmit={createShop} />}
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
+      {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -3349,4 +3426,9 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .price-name { flex:1; font-weight:600; color:var(--ink); }
 .price-amount { width:120px; }
 .price-period { width:120px; }
+.pay-form { display:flex; flex-direction:column; gap:4px; padding-bottom:14px; border-bottom:1px solid var(--line); margin-bottom:14px; }
+.pay-hist-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.pay-list { display:flex; flex-direction:column; gap:8px; }
+.pay-item { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+.pay-amt { font-weight:700; color:var(--ink); }
 `;
