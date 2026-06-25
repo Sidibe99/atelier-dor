@@ -675,6 +675,153 @@ function OnlineLogin({ onExit, logo }) {
   );
 }
 
+function ShopFormModal({ mode, shop, onClose, onSubmit }) {
+  const computeExpiry = (p) => { const d = new Date(); d.setDate(d.getDate() + (FORMULAS[p] ? FORMULAS[p].days : 30)); return iso(d); };
+  const [name, setName] = useState(shop ? shop.name : "");
+  const [phone, setPhone] = useState(shop ? (shop.phone || "") : "");
+  const [plan, setPlan] = useState(shop && shop.plan ? shop.plan : "S");
+  const [expiry, setExpiry] = useState(() => computeExpiry(shop && shop.plan ? shop.plan : "S"));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const pickPlan = (p) => { setPlan(p); setExpiry(computeExpiry(p)); };
+  const submit = async () => {
+    if (mode === "create" && !name.trim()) { setErr("Indique le nom de la boutique."); return; }
+    if (!expiry) { setErr("Choisis une date de fin."); return; }
+    setBusy(true); setErr("");
+    try { await onSubmit({ name: name.trim(), phone: phone.trim(), plan, expiry }); }
+    catch (e) { setErr("Opération impossible. Vérifie ta connexion internet."); setBusy(false); return; }
+    setBusy(false);
+  };
+  return (
+    <Modal
+      title={mode === "create" ? "Nouvelle boutique" : "Renouveler l'abonnement"}
+      sub={mode === "renew" && shop ? shop.name : ""}
+      onClose={onClose}
+      footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={submit} disabled={busy}>{busy ? "…" : (mode === "create" ? "Créer" : "Renouveler")}</button></>}>
+      {mode === "create" && (
+        <>
+          <Field label="Nom de la boutique"><input className="act-input" value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="Ex. Bijouterie Fall" /></Field>
+          <Field label="Téléphone / WhatsApp"><input className="act-input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 221770000000" /></Field>
+        </>
+      )}
+      <Field label="Formule (calcule la date)">
+        <div className="plan-row">
+          {["E", "S", "P", "R"].map((p) => (
+            <button key={p} type="button" className={`btn ${plan === p ? "btn-gold" : "btn-line"} plan-pick`} onClick={() => pickPlan(p)}>{FORMULAS[p].name} · {FORMULAS[p].days}j</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Date de fin (modifiable à la main)"><input className="act-input" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></Field>
+      {err && <p className="lock-err">{err}</p>}
+    </Modal>
+  );
+}
+
+function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
+  const [shops, setShops] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const { data, error } = await supabase.from("shops").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      setShops(data || []);
+    } catch (e) { setErr("Impossible de charger les boutiques. Vérifie ta connexion."); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const createShop = async ({ name, phone, plan, expiry }) => {
+    const { error } = await supabase.from("shops").insert({ name, phone, plan, expiry, status: "active" });
+    if (error) throw error;
+    setModal(null); await load();
+  };
+  const renewShop = async (shop, { plan, expiry }) => {
+    const { error } = await supabase.from("shops").update({ plan, expiry, status: "active" }).eq("id", shop.id);
+    if (error) throw error;
+    setModal(null); await load();
+  };
+  const toggleStatus = async (shop) => {
+    const next = shop.status === "suspended" ? "active" : "suspended";
+    const verb = next === "suspended" ? "suspendre" : "réactiver";
+    if (!window.confirm(`Veux-tu ${verb} « ${shop.name} » ?`)) return;
+    const { error } = await supabase.from("shops").update({ status: next }).eq("id", shop.id);
+    if (error) { window.alert("Action impossible. Vérifie ta connexion."); return; }
+    await load();
+  };
+
+  const statusOf = (s) => {
+    if (s.status === "suspended") return { label: "Suspendue", tone: "red" };
+    if (s.expiry && s.expiry < TODAY) return { label: "Expirée", tone: "red" };
+    if (s.expiry) {
+      const days = Math.ceil((new Date(s.expiry).getTime() - new Date(TODAY).getTime()) / 86400000);
+      if (days <= 7) return { label: days <= 0 ? "Expire aujourd'hui" : `Expire dans ${days}j`, tone: "amber" };
+    }
+    return { label: "Active", tone: "green" };
+  };
+  const waLink = (phone, name) => {
+    const p = String(phone || "").replace(/[^\d]/g, "");
+    const msg = `Bonjour, au sujet de votre abonnement Atelier d'Or${name ? ` (boutique : ${name})` : ""}.`;
+    return p ? `https://wa.me/${p}?text=${encodeURIComponent(msg)}` : null;
+  };
+
+  return (
+    <div className="reseller">
+      <header className="reseller-top">
+        <div className="reseller-brand"><BrandMark logo={logo} /><div><div className="brand-name">Espace revendeur</div><div className="brand-sub">{authUser.email}</div></div></div>
+        <div className="reseller-actions">
+          <button className="btn btn-gold" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Nouvelle boutique</button>
+          <button className="btn btn-line" onClick={onSignOut}><LogOut size={15} /> Déconnexion</button>
+        </div>
+      </header>
+
+      {loading ? (
+        <p className="muted" style={{ padding: 24 }}>Chargement des boutiques…</p>
+      ) : err ? (
+        <div style={{ padding: 24 }}><p className="lock-err">{err}</p><button className="btn btn-line" onClick={load}>Réessayer</button></div>
+      ) : shops.length === 0 ? (
+        <div className="reseller-empty">
+          <p className="muted">Aucune boutique pour l'instant.</p>
+          <button className="btn btn-gold" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Créer la première boutique</button>
+        </div>
+      ) : (
+        <div className="reseller-list">
+          {shops.map((s) => {
+            const st = statusOf(s);
+            const wa = waLink(s.phone, s.name);
+            return (
+              <div className="shop-card" key={s.id}>
+                <div className="shop-main">
+                  <div className="shop-name">{s.name}</div>
+                  <div className="shop-meta">
+                    <span className={`pill pill-${st.tone}`}>{st.label}</span>
+                    {s.plan && FORMULAS[s.plan] && <span className="pill pill-plan">{FORMULAS[s.plan].name}</span>}
+                    {s.expiry && <span className="muted small">Fin : {dateFr(s.expiry)}</span>}
+                    {s.phone && <span className="muted small">{s.phone}</span>}
+                  </div>
+                </div>
+                <div className="shop-actions">
+                  {wa && <a className="btn btn-line" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  <button className="btn btn-line" onClick={() => setModal({ mode: "renew", shop: s })}><RefreshCw size={15} /> Renouveler</button>
+                  <button className={`btn ${s.status === "suspended" ? "btn-gold" : "btn-line"}`} onClick={() => toggleStatus(s)}>{s.status === "suspended" ? "Réactiver" : "Suspendre"}</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button className="editor-link" onClick={onExit}>Retour à l'application</button>
+
+      {modal && modal.mode === "create" && <ShopFormModal mode="create" onClose={() => setModal(null)} onSubmit={createShop} />}
+      {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
+    </div>
+  );
+}
+
 function BackupModal({ mode, json, onClose, onImport }) {
   const [text, setText] = useState(mode === "export" ? json : "");
   const [copied, setCopied] = useState(false);
@@ -2604,17 +2751,7 @@ export default function App() {
           ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
           : !authUser
             ? (<OnlineLogin onExit={exitEspace} logo={shop.logo} />)
-            : (
-              <div className="lock">
-                <div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-title">Espace revendeur</div><div className="lock-sub">Connecté</div></div>
-                <div className="act-box">
-                  <p className="lock-q">Tu es connecté en ligne</p>
-                  <p className="muted small" style={{ marginBottom: 12 }}>{authUser.email}</p>
-                  <button className="btn btn-gold act-btn" onClick={authSignOut}>Déconnexion</button>
-                </div>
-                <button className="editor-link" onClick={exitEspace}>Retour à l'application</button>
-              </div>
-            )}
+            : (<ResellerSpace authUser={authUser} onSignOut={authSignOut} onExit={exitEspace} logo={shop.logo} />)}
       </div>
     );
   }
@@ -3097,4 +3234,23 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .search { display:none; }
 }
 @media (max-width:460px){ .kpis { grid-template-columns:1fr; } }
+/* ----- Espace revendeur ----- */
+.reseller { max-width:880px; margin:0 auto; padding:24px 16px 64px; }
+.reseller-top { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+.reseller-brand { display:flex; align-items:center; gap:12px; }
+.reseller-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.reseller-empty { text-align:center; padding:48px 16px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.reseller-list { display:flex; flex-direction:column; gap:12px; }
+.shop-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.shop-main { min-width:200px; flex:1; }
+.shop-name { font-weight:700; font-size:1.05rem; color:var(--ink); margin-bottom:6px; }
+.shop-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.shop-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:.78rem; font-weight:600; }
+.pill-green { background:rgba(60,90,67,.14); color:var(--green); }
+.pill-amber { background:rgba(184,134,47,.16); color:var(--gold); }
+.pill-red { background:rgba(156,74,53,.14); color:var(--clay); }
+.pill-plan { background:rgba(28,22,17,.06); color:var(--muted); }
+.plan-row { display:flex; gap:8px; flex-wrap:wrap; }
+.plan-pick { font-size:.85rem; padding:8px 12px; }
 `;
