@@ -72,8 +72,8 @@ const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée e
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
 
 /* ----------------------------- licence ---------------------------------- */
-const LIC_SECRET = "Sene-gal@Teranga?Guinee1@Labe99 ";   // clé de signature des codes (À CHANGER avant revente)
-const MASTER_PW = "Rouzo@rKedougou?LawolTamba ";              // mot de passe maître de l'espace éditeur (À CHANGER)
+const LIC_SECRET = "ATELIERDOR-K7-2026";   // clé de signature des codes (À CHANGER avant revente)
+const MASTER_PW = "admin2026";              // mot de passe maître de l'espace éditeur (À CHANGER)
 const DAY = 86400000;
 // Formules : limites (admins / utilisateurs), durée et tarif. Tarifs à personnaliser.
 const FORMULAS = {
@@ -737,6 +737,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
   const [autherr, setAutherr] = useState(false);
   const [plan, setPlan] = useState("S");
   const [client, setClient] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
   const [code, setCode] = useState(null);
   const [log, setLog] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -752,10 +753,11 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
   const [shopLogo, setShopLogo] = useState(shop?.logo || "");
   const [savedMsg, setSavedMsg] = useState("");
 
-  useEffect(() => { (async () => { try { const v = await STORE.get("atelierdor:admincodes"); if (v) setLog(JSON.parse(v)); } catch (e) { /* */ } })(); }, []);
+  useEffect(() => { (async () => { try { const v = await STORE.get("atelierdor:admincodes"); if (v) setLog(JSON.parse(v)); } catch (e) { /* */ } try { const a = await STORE.get("atelierdor:adminok"); if (a === "1") setAuthed(true); } catch (e) { /* */ } })(); }, []);
   const saveLog = (l) => { setLog(l); STORE.set("atelierdor:admincodes", JSON.stringify(l)); };
   const delCode = (i) => { if (window.confirm("Supprimer ce code de l'historique ?")) saveLog(log.filter((_, j) => j !== i)); };
-  const tryAuth = () => { if (pw === MASTER_PW) setAuthed(true); else setAutherr(true); };
+  const tryAuth = () => { if (pw === MASTER_PW) { setAuthed(true); try { STORE.set("atelierdor:adminok", "1"); } catch (e) { /* */ } } else setAutherr(true); };
+  const lockAdmin = () => { try { STORE.del("atelierdor:adminok"); } catch (e) { /* */ } setAuthed(false); setPw(""); };
   const generate = () => {
     const c = genActivation(plan);
     const v = verifyActivation(c);
@@ -791,7 +793,6 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
           <input className="act-input" type="password" value={pw} onChange={(e) => { setPw(e.target.value); setAutherr(false); }} placeholder="••••••••" onKeyDown={(e) => e.key === "Enter" && tryAuth()} />
           {autherr && <p className="lock-err">Mot de passe incorrect.</p>}
           <button className="btn btn-gold act-btn" onClick={tryAuth}>Entrer</button>
-          <p className="lock-hint">Démo — mot de passe : admin2026</p>
         </div>
         <button className="editor-link" onClick={onExit}>← Retour à l'app</button>
       </div>
@@ -801,24 +802,34 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
     <div className="admin">
       <div className="admin-bar">
         <div><strong>Espace éditeur</strong> <span className="muted">· licences & configuration</span></div>
-        <button className="btn btn-line" onClick={onExit}>← Retour à l'app</button>
+        <div className="head-btns">
+          <button className="btn btn-line" onClick={lockAdmin}>Verrouiller</button>
+          <button className="btn btn-line" onClick={onExit}>← Retour à l'app</button>
+        </div>
       </div>
       {savedMsg && <div className="admin-flash">{savedMsg}</div>}
       <div className="admin-grid">
         <div className="card">
-          <div className="card-head"><h3>Générer un code</h3></div>
+          <div className="card-head"><h3>Générer / renouveler un code</h3></div>
+          <p className="muted small" style={{ margin: "0 0 10px" }}>Pour un nouveau client comme pour un <strong>renouvellement à l'échéance</strong> : choisis la formule, génère le code et envoie-le. En le saisissant dans l'app, le client (ré)active son abonnement jusqu'à la nouvelle date d'expiration.</p>
           <div className="field-label" style={{ marginBottom: 7 }}>Formule</div>
           <div className="plan-row">
             {Object.entries(FORMULAS).map(([k, f]) => <button key={k} className={`plan ${plan === k ? "on" : ""}`} onClick={() => setPlan(k)}>{f.name}</button>)}
           </div>
           <p className="muted small" style={{ margin: "0 0 10px" }}>{FORMULAS[plan].priceLabel} · {FORMULAS[plan].admins >= 99 ? "admins illimités" : `${FORMULAS[plan].admins} admin${FORMULAS[plan].admins > 1 ? "s" : ""}`} · {FORMULAS[plan].users >= 99 ? "utilisateurs illimités" : `${FORMULAS[plan].users} utilisateurs`}</p>
-          <Field label="Client / boutique (optionnel)"><input className="input" value={client} onChange={(e) => setClient(e.target.value)} placeholder="ex : Bijouterie Sandaga" /></Field>
+          <div className="grid2">
+            <Field label="Client / boutique (optionnel)"><input className="input" value={client} onChange={(e) => setClient(e.target.value)} placeholder="ex : Bijouterie Sandaga" /></Field>
+            <Field label="WhatsApp du client (optionnel)"><input className="input num" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="221770000000" /></Field>
+          </div>
           <button className="btn btn-gold" onClick={generate}><Plus size={15} /> Générer le code</button>
           {code && (
             <div className="code-out">
               <div className="code-val num">{code.code}</div>
               <div className="code-meta">{code.plan} · expire : {code.expiry}{code.client ? ` · ${code.client}` : ""}</div>
-              <button className="btn btn-line" onClick={copy}>{copied ? "Copié ✓" : "Copier le code"}</button>
+              <div className="head-btns">
+                <button className="btn btn-line" onClick={copy}>{copied ? "Copié ✓" : "Copier le code"}</button>
+                {clientPhone.replace(/[^\d]/g, "") && <a className="btn btn-gold" href={`https://wa.me/${clientPhone.replace(/[^\d]/g, "")}?text=${encodeURIComponent(`Bonjour, voici votre code d'activation Atelier d'Or (${code.plan}) : ${code.code} — valable jusqu'au ${code.expiry}. Saisissez-le dans l'application (écran d'accueil → « j'ai déjà un code ») pour activer ou renouveler votre abonnement.`)}`} target="_blank" rel="noreferrer">Envoyer au client</a>}
+              </div>
             </div>
           )}
         </div>
