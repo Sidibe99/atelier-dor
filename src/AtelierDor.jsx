@@ -863,6 +863,7 @@ function PaymentsModal({ shop, onClose }) {
 
 function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [shops, setShops] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
@@ -873,6 +874,10 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       const { data, error } = await supabase.from("shops").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       setShops(data || []);
+      try {
+        const { data: pdata } = await supabase.from("payments").select("amount, paid_on");
+        setPayments(pdata || []);
+      } catch (e2) { setPayments([]); }
     } catch (e) { setErr("Impossible de charger les boutiques. Vérifie ta connexion."); }
     finally { setLoading(false); }
   }, []);
@@ -913,6 +918,11 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
     return p ? `https://wa.me/${p}?text=${encodeURIComponent(msg)}` : null;
   };
 
+  const totalEncaisse = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const monthKey = TODAY.slice(0, 7);
+  const encaisseMois = payments.reduce((sum, p) => sum + (String(p.paid_on).slice(0, 7) === monthKey ? (p.amount || 0) : 0), 0);
+  const activeCount = shops.filter((s) => s.status !== "suspended" && (!s.expiry || String(s.expiry).slice(0, 10) >= TODAY)).length;
+
   return (
     <div className="reseller">
       <header className="reseller-top">
@@ -923,6 +933,14 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
           <button className="btn btn-line" onClick={onSignOut}><LogOut size={15} /> Déconnexion</button>
         </div>
       </header>
+
+      {!loading && !err && (
+        <div className="reseller-stats">
+          <div className="stat"><div className="stat-val">{fcfa(totalEncaisse)}</div><div className="stat-lab">Total encaissé</div></div>
+          <div className="stat"><div className="stat-val">{fcfa(encaisseMois)}</div><div className="stat-lab">Encaissé ce mois</div></div>
+          <div className="stat"><div className="stat-val">{activeCount}</div><div className="stat-lab">Boutiques actives</div></div>
+        </div>
+      )}
 
       {loading ? (
         <p className="muted" style={{ padding: 24 }}>Chargement des boutiques…</p>
@@ -967,7 +985,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "create" && <ShopFormModal mode="create" onClose={() => setModal(null)} onSubmit={createShop} />}
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
-      {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => setModal(null)} />}
+      {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
     </div>
   );
 }
@@ -3410,6 +3428,11 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .reseller-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .reseller-empty { text-align:center; padding:48px 16px; display:flex; flex-direction:column; align-items:center; gap:14px; }
 .reseller-list { display:flex; flex-direction:column; gap:12px; }
+.reseller-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
+.stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
+.stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
+@media (max-width:560px){ .reseller-stats { grid-template-columns:1fr; } }
 .shop-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .shop-main { min-width:200px; flex:1; }
 .shop-name { font-weight:700; font-size:1.05rem; color:var(--ink); margin-bottom:6px; }
