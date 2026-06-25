@@ -3238,6 +3238,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .reseller { max-width:880px; margin:0 auto; padding:24px 16px 64px; }
 .reseller-top { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
 .reseller-brand { display:flex; align-items:center; gap:12px; }
+.reseller-brand .brand-name { color:var(--ink); }
+.reseller-brand .brand-sub { color:var(--muted); }
 .reseller-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .reseller-empty { text-align:center; padding:48px 16px; display:flex; flex-direction:column; align-items:center; gap:14px; }
 .reseller-list { display:flex; flex-direction:column; gap:12px; }
