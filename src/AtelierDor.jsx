@@ -88,6 +88,15 @@ const FORMULAS = {
        features: ["Admins & utilisateurs illimités", "1 an inclus", "Toutes les fonctions"] },
 };
 const PAID_FORMULAS = ["S", "P", "R"];
+let LIVE_PRICES = null; // prix chargés depuis Supabase (sinon repli sur FORMULAS)
+function priceLabelOf(plan) {
+  const p = LIVE_PRICES && LIVE_PRICES[plan];
+  if (p) {
+    if (!p.amount || p.amount <= 0) return FORMULAS[plan] ? FORMULAS[plan].priceLabel : "Gratuit";
+    return `${nf.format(p.amount)} F / ${p.period || "mois"}`;
+  }
+  return FORMULAS[plan] ? FORMULAS[plan].priceLabel : "";
+}
 function licHash(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; return h >>> 0; }
 // Mots de passe : sel par utilisateur + hachage à plusieurs tours (empreinte illisible, non réversible).
 const genSalt = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
@@ -800,7 +809,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, logo }) {
                   <div className="shop-meta">
                     <span className={`pill pill-${st.tone}`}>{st.label}</span>
                     {s.plan && FORMULAS[s.plan] && <span className="pill pill-plan">{FORMULAS[s.plan].name}</span>}
-                    {s.plan && FORMULAS[s.plan] && <span className="muted small">{FORMULAS[s.plan].priceLabel}</span>}
+                    {s.plan && FORMULAS[s.plan] && <span className="muted small">{priceLabelOf(s.plan)}</span>}
                     {s.expiry && <span className="muted small">Fin : {dateFr(String(s.expiry).slice(0, 10))}</span>}
                     {s.phone && <span className="muted small">{s.phone}</span>}
                   </div>
@@ -986,7 +995,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
           <div className="plan-row">
             {Object.entries(FORMULAS).map(([k, f]) => <button key={k} className={`plan ${plan === k ? "on" : ""}`} onClick={() => setPlan(k)}>{f.name}</button>)}
           </div>
-          <p className="muted small" style={{ margin: "0 0 10px" }}>{FORMULAS[plan].priceLabel} · {FORMULAS[plan].admins >= 99 ? "admins illimités" : `${FORMULAS[plan].admins} admin${FORMULAS[plan].admins > 1 ? "s" : ""}`} · {FORMULAS[plan].users >= 99 ? "utilisateurs illimités" : `${FORMULAS[plan].users} utilisateurs`}</p>
+          <p className="muted small" style={{ margin: "0 0 10px" }}>{priceLabelOf(plan)} · {FORMULAS[plan].admins >= 99 ? "admins illimités" : `${FORMULAS[plan].admins} admin${FORMULAS[plan].admins > 1 ? "s" : ""}`} · {FORMULAS[plan].users >= 99 ? "utilisateurs illimités" : `${FORMULAS[plan].users} utilisateurs`}</p>
           <div className="grid2">
             <Field label="Client / boutique (optionnel)"><input className="input" value={client} onChange={(e) => setClient(e.target.value)} placeholder="ex : Bijouterie Sandaga" /></Field>
             <Field label="WhatsApp du client (optionnel)"><input className="input num" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="221770000000" /></Field>
@@ -1328,6 +1337,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
   const [authReady, setAuthReady] = useState(false); // session en ligne restaurée ?
+  const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : "app"; });
   const [license, setLicense] = useState(null);
@@ -1482,6 +1492,20 @@ export default function App() {
     })();
     return () => { try { sub && sub.unsubscribe(); } catch (e) { /* */ } };
   }, []);
+
+  // ---- prix des formules chargés depuis Supabase (modifiables par le revendeur) ----
+  const loadPrices = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("pricing").select("*");
+      if (!error && data && data.length) {
+        const map = {};
+        data.forEach((r) => { map[r.plan] = r; });
+        LIVE_PRICES = map;
+        setPricesVersion((v) => v + 1);
+      }
+    } catch (e) { /* on garde les prix par défaut */ }
+  }, []);
+  useEffect(() => { loadPrices(); }, [loadPrices]);
 
   // ---- routage #admin-create + vérification de la licence ----
   useEffect(() => {
@@ -1668,7 +1692,7 @@ export default function App() {
   };
   const chooseFormula = (k) => {
     const f = FORMULAS[k];
-    const msg = `Bonjour, je souhaite la formule ${f.name} (${f.priceLabel}) pour Atelier d'Or${shop?.name ? ` — boutique : ${shop.name}` : ""}.`;
+    const msg = `Bonjour, je souhaite la formule ${f.name} (${priceLabelOf(k)}) pour Atelier d'Or${shop?.name ? ` — boutique : ${shop.name}` : ""}.`;
     const phone = String(resellerPhone || "").replace(/[^\d]/g, "");
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     setFormulaReq({ name: f.name, msg, url, hasPhone: !!phone });
@@ -2726,7 +2750,7 @@ export default function App() {
             const current = license && license.plan === k;
             return (
               <div className={`formula ${current ? "formula-current" : ""}`} key={k}>
-                <div className="formula-top"><span className="formula-name">{ff.name}</span><span className="formula-price">{ff.priceLabel}</span></div>
+                <div className="formula-top"><span className="formula-name">{ff.name}</span><span className="formula-price">{priceLabelOf(k)}</span></div>
                 <ul className="formula-feats">{ff.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
                 {current
                   ? <button className="btn btn-line formula-btn" disabled>Formule actuelle</button>
