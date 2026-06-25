@@ -3187,6 +3187,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   border-radius:10px; padding:12px 14px; font-size:15px; text-align:center; outline:none; letter-spacing:.04em; }
 .act-input::placeholder { color:#7d7160; letter-spacing:0; }
 .act-input:focus { border-color:var(--gold2); }
+.modal .act-input { color:var(--ink); background:var(--card); border:1px solid var(--line); }
+.modal .act-input::placeholder { color:var(--muted); }
 .act-btn { width:100%; justify-content:center; margin-top:12px; }
 .editor-link { margin:22px auto 8px; display:block; background:none; border:0; color:#6b6051; font:inherit; font-size:12px; cursor:pointer; }
 .editor-link:hover { color:#a99c84; text-decoration:underline; }
