@@ -1671,14 +1671,30 @@ export default function App() {
     const totA = cPurch.reduce((a, p) => a + p.total, 0);
     const creance = cSales.reduce((a, s) => a + Math.max(0, balanceFor(s)), 0);
     const reste = cPurch.reduce((a, p) => a + Math.max(0, purchaseBalance(p)), 0);
+    const cat = { or: 0, bijoux: 0, divers: 0 };
+    cSales.forEach((s) => { cat[s.kind === "divers" ? "divers" : s.kind === "bijoux" ? "bijoux" : "or"] += s.total; });
+    const isClient = cSales.length > 0;
+    const isFourn = cPurch.length > 0;
     return (
-      <Modal title={name} sub={cl && cl.phone ? `Tél : ${cl.phone}` : "Historique du client"} onClose={() => setClientView(null)}>
+      <Modal title={name} sub={cl && cl.phone ? `Tél : ${cl.phone}` : "Historique"} onClose={() => setClientView(null)}>
+        <div className="role-tags">
+          {isClient && <span className="pill pill-gold">Client</span>}
+          {isFourn && <span className="pill pill-ink">Fournisseur</span>}
+          {!isClient && !isFourn && <span className="muted small">Aucune opération enregistrée.</span>}
+        </div>
         <div className="ch-kpis">
           <div className="ch-kpi"><span>Ventes</span><strong className="num">{fcfa(totV)}</strong></div>
           <div className="ch-kpi"><span>Achats</span><strong className="num">{fcfa(totA)}</strong></div>
           <div className="ch-kpi"><span>Il te doit</span><strong className="num neg">{fcfa(creance)}</strong></div>
           <div className="ch-kpi"><span>À lui payer</span><strong className="num neg">{fcfa(reste)}</strong></div>
         </div>
+        {isClient && (cat.or + cat.bijoux + cat.divers > 0) && (
+          <div className="cat-split">
+            <span className="cat-chip"><em>Or</em> {fcfa(cat.or)}</span>
+            <span className="cat-chip"><em>Bijoux</em> {fcfa(cat.bijoux)}</span>
+            <span className="cat-chip"><em>Divers</em> {fcfa(cat.divers)}</span>
+          </div>
+        )}
         <h4 className="ch-h">Ventes <span className="count">{cSales.length}</span></h4>
         {cSales.length === 0 ? <p className="muted small">Aucune vente.</p> : (
           <table className="table compact"><tbody>
@@ -1687,6 +1703,7 @@ export default function App() {
               return (
                 <tr key={s.id}>
                   <td className="num">{dateFr(s.date)}</td>
+                  <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                   <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}</td>
                   <td className="r num pos">{fcfa(s.total)}</td>
                   <td className="r"><button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button></td>
@@ -1882,9 +1899,13 @@ export default function App() {
             <div className="client-card" key={c.id}>
               <div className="avatar">{c.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</div>
               <div className="client-main">
-                <strong>{c.name}</strong>
+                <button className="name-link" style={{ fontSize: 15 }} onClick={() => setClientView(c.name)}>{c.name}</button>
                 <span className="muted">{c.phone || "—"}</span>
                 {c.note && <span className="client-note">{c.note}</span>}
+                <div className="role-tags" style={{ margin: "4px 0 0" }}>
+                  {nv > 0 && <span className="pill pill-gold">Client</span>}
+                  {na > 0 && <span className="pill pill-ink">Fournisseur</span>}
+                </div>
                 <span className="muted small">{nv} vente(s) · {na} rachat(s)</span>
               </div>
               <div className="rowbtns">
@@ -2670,6 +2691,10 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .ch-kpi { background:#f6efe1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:3px; }
 .ch-kpi span { font-size:11px; color:var(--muted); } .ch-kpi strong { font-size:15px; }
 .ch-h { font-family:'Fraunces',serif; font-size:15px; margin:14px 0 6px; color:var(--ink); }
+.role-tags { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+.cat-split { display:flex; gap:8px; flex-wrap:wrap; margin:-4px 0 14px; }
+.cat-chip { background:#f6efe1; border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:600; }
+.cat-chip em { color:var(--muted); font-style:normal; font-weight:500; margin-right:5px; }
 .table.compact td { padding:7px 8px; font-size:13px; }
 @media (max-width:560px){ .ch-kpis { grid-template-columns:repeat(2,1fr); } }
 a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
