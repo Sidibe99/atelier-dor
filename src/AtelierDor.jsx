@@ -10,6 +10,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import * as XLSX from "xlsx";
+import { LIC_SECRET, MASTER_PW } from "./config.js";
 
 /* ----------------------------- utilitaires ------------------------------ */
 const nf = new Intl.NumberFormat("fr-FR");
@@ -72,8 +73,7 @@ const SEED_SPOT = 4100;           // USD / once (valeur de départ, remplacée e
 const SEED_RATE = 572;            // 1 USD en XOF (valeur de départ)
 
 /* ----------------------------- licence ---------------------------------- */
-const LIC_SECRET = "ATELIERDOR-K7-2026";   // clé de signature des codes (À CHANGER avant revente)
-const MASTER_PW = "admin2026";              // mot de passe maître de l'espace éditeur (À CHANGER)
+// Les secrets sont dans src/config.js (édité une seule fois, jamais écrasé par les mises à jour).
 const DAY = 86400000;
 // Formules : limites (admins / utilisateurs), durée et tarif. Tarifs à personnaliser.
 const FORMULAS = {
