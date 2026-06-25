@@ -14,3 +14,6 @@ export const LIC_SECRET = "Sene-gal@Teranga?Guinee1@Labe99 ";
 // Mot de passe maître de l'espace éditeur (atelierdorpro.com/#admin-create).
 // Mets un mot de passe fort que toi seul connais.
 export const MASTER_PW = "Rouzo@rKedougou?LawolTamba";
+
+export const SUPABASE_URL = "https://ihmqrmujnvqucgdwiphb.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_Kt1vxAYGWZtCyD04A5Y_SA_nNgFdR70";
