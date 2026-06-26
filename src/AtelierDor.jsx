@@ -883,6 +883,15 @@ function AccountModal({ shop, onClose, onSubmit }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
+  const [existing, setExisting] = useState(null); // null = chargement
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("profiles").select("id, role, name, email").eq("shop_id", shop.id);
+        setExisting(data || []);
+      } catch (e) { setExisting([]); }
+    })();
+  }, [shop.id]);
   const genPwd = () => {
     const a = "ABCDEFGHJKMNPQRSTUVWXYZ", n = "23456789";
     let s = "";
@@ -918,7 +927,24 @@ function AccountModal({ shop, onClose, onSubmit }) {
   return (
     <Modal title="Compte client" sub={shop.name} onClose={onClose}
       footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={submit} disabled={busy}>{busy ? "…" : "Créer le compte"}</button></>}>
-      <p className="muted small" style={{ margin: "0 0 12px" }}>Crée l'accès en ligne du client pour cette boutique.</p>
+      {existing === null ? (
+        <p className="muted small" style={{ margin: "0 0 12px" }}>Chargement des comptes…</p>
+      ) : existing.length > 0 ? (
+        <>
+          <div className="creds-sep" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>Comptes existants</div>
+          <div className="creds-box" style={{ marginBottom: 14 }}>
+            {existing.map((p) => (
+              <div className="creds-row" key={p.id}>
+                <span>{p.role === "admin" ? "Chef de boutique" : "Vendeur"}</span>
+                <b>{p.email || "(e-mail non enregistré)"}</b>
+              </div>
+            ))}
+          </div>
+          <div className="creds-sep">Ajouter un autre compte</div>
+        </>
+      ) : (
+        <p className="muted small" style={{ margin: "0 0 12px" }}>Aucun compte pour cette boutique. Crée l'accès en ligne du client.</p>
+      )}
       <Field label="E-mail du client"><input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="boutique@exemple.com" /></Field>
       <Field label="Mot de passe">
         <div className="pwd-row">
