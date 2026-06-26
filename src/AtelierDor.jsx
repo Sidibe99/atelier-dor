@@ -3731,7 +3731,7 @@ export default function App() {
         <p className="src-note">Sources en direct : prix de l'or via gold-api.com · taux de change via <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Exchange Rate API</a>.</p>
       </div>
 
-      <p className="disclaim">Données de marché à titre indicatif (pas un conseil financier). L'actualisation reflète le cours du moment ; pour un flux à la seconde près façon salle de marché, il faudra brancher un fournisseur de données dédié lors de la mise en ligne.</p>
+      <p className="disclaim">Données de marché à titre indicatif — à vérifier avant toute transaction importante.</p>
     </>
   );
 
