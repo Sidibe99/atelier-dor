@@ -3718,8 +3718,8 @@ export default function App() {
         <div className="side-foot">
           <button className="btn logout-btn" onClick={logout}><LogOut size={15} /> Déconnexion</button>
           <div className="save-ind">
-            <span className={`save-dot ${saveState}`} />
-            {saveState === "saving" ? "Enregistrement…" : saveState === "error" ? "Sauvegarde indisponible" : "Données enregistrées"}
+            <span className={`save-dot ${saveState === "error" ? "error" : "saved"}`} />
+            {saveState === "error" ? "Sauvegarde indisponible" : "Données enregistrées"}
           </div>
         </div>
       </aside>
@@ -3730,7 +3730,7 @@ export default function App() {
             <button className="icon-btn menu-btn" onClick={() => setNavOpen((o) => !o)}><Menu size={20} /></button>
             <div>
               <h1>{titles[cur]}</h1>
-              <span className="muted small">{now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} · <span className="clock-now">{now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>{syncState !== "idle" && <span className={`sync-chip ${syncState}`}>{syncState === "syncing" ? "Synchronisation…" : (syncState === "offline" || syncState === "error") ? "Hors ligne" : "Synchronisé"}</span>}</span>
+              <span className="muted small shop-line">{shop.name || "Atelier d'Or"}</span>
             </div>
           </div>
 
@@ -3742,6 +3742,11 @@ export default function App() {
                 <span className="assay-p num">{nf.format(Math.round(prices[k].vente))}</span>
               </div>
             ))}
+          </div>
+
+          <div className="clock-box">
+            <div className="clock-time">{now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
+            <div className="clock-date">{now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}{syncState !== "idle" && <span className={`net-pill ${(syncState === "offline" || syncState === "error") ? "off" : "on"}`}><span className="net-dot" />{(syncState === "offline" || syncState === "error") ? "Hors ligne" : "En ligne"}</span>}</div>
           </div>
 
           <div className="top-actions">
@@ -3871,13 +3876,21 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .main { flex:1; margin-left:248px; min-width:0; display:flex; flex-direction:column; }
 .topbar { display:flex; align-items:center; gap:16px; padding:14px 24px; background:rgba(255,253,248,.85);
   backdrop-filter:blur(8px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; flex-wrap:wrap; }
-.top-left { display:flex; align-items:center; gap:12px; }
+.top-left { display:flex; align-items:center; gap:12px; margin-right:auto; }
 .topbar h1 { font-size:21px; }
+.shop-line { font-weight:600; color:var(--gold); text-transform:capitalize; }
 .sync-chip { display:inline-block; margin-left:10px; padding:1px 9px; border-radius:20px; font-size:10.5px; font-weight:600; background:var(--gold-soft,#f3e7c9); color:var(--gold); vertical-align:middle; }
 .cell-time { display:block; font-size:11px; color:var(--muted); margin-top:1px; }
 .sync-chip.offline, .sync-chip.error { background:#f3e3dd; color:var(--clay); }
 .sync-chip.synced { background:#e4efe6; color:var(--green); }
-.cours-ticker { display:flex; align-items:center; gap:7px; margin:0 auto; flex-wrap:wrap; cursor:pointer; }
+.cours-ticker { display:flex; align-items:center; gap:7px; margin:0; flex-wrap:wrap; cursor:pointer; }
+.clock-box { display:flex; flex-direction:column; align-items:flex-end; line-height:1.12; }
+.clock-time { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--gold); letter-spacing:.5px; }
+.clock-date { font-size:12px; color:var(--muted); text-transform:capitalize; margin-top:1px; }
+.net-pill { display:inline-flex; align-items:center; gap:5px; margin-left:8px; font-size:11px; font-weight:600; color:var(--green); vertical-align:middle; text-transform:none; }
+.net-pill.off { color:var(--clay); }
+.net-dot { width:7px; height:7px; border-radius:50%; background:#3fae6a; display:inline-block; }
+.net-pill.off .net-dot { background:var(--clay); }
 .ticker-live { display:inline-flex; align-items:center; }
 .assay { display:flex; flex-direction:column; align-items:center; border:1px solid var(--line);
   border-radius:8px; padding:4px 9px; background:var(--card); min-width:58px; }
@@ -4243,6 +4256,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .search { display:none; }
   .topbar { flex-wrap:wrap; gap:10px; padding:12px 14px; }
   .top-actions { margin-left:auto; }
+  .clock-box { align-items:flex-start; order:4; }
+  .clock-time { font-size:21px; }
   .card { overflow-x:auto; }
   .cours-ticker { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .table { min-width:540px; }
