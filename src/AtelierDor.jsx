@@ -98,12 +98,19 @@ const planAllows = (plan, feature) => {
   return !allowed || allowed.includes(plan);
 };
 
-// tri d'une collection synchronisée (plus récent en premier)
+// tri d'une collection synchronisée (plus récent en premier), identique sur tous les appareils
 const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", gold: "added", divers: "added" };
+const cmpRecent = (k) => (a, b) => {
+  const d = String((b && b[k]) || "").localeCompare(String((a && a[k]) || ""));
+  if (d !== 0) return d;
+  const t = String((b && b.time) || "").localeCompare(String((a && a.time) || ""));
+  if (t !== 0) return t;
+  return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
+};
 const sortColl = (coll, arr) => {
   const k = SORT_KEY[coll];
   if (!k) return arr;
-  return [...arr].sort((a, b) => String((b && b[k]) || "").localeCompare(String((a && a[k]) || "")));
+  return [...arr].sort(cmpRecent(k));
 };
 const PAID_FORMULAS = ["S", "P", "R"];
 let LIVE_PRICES = null; // prix chargés depuis Supabase (sinon repli sur FORMULAS)
@@ -2159,7 +2166,7 @@ export default function App() {
       window.addEventListener("offline", onOffline);
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) setSyncState("offline");
-    const hb = setInterval(() => setNetTick((n) => n + 1), 6000); // reprise auto toutes les 6 s
+    const hb = setInterval(() => setNetTick((n) => n + 1), 2500); // reprise auto toutes les 2,5 s
     return () => {
       if (typeof window !== "undefined") {
         window.removeEventListener("online", onOnline);
@@ -2281,6 +2288,25 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [loaded, currentUser, dataReady, netTick]);
+
+  // ---- synchro en ligne : TEMPS RÉEL (réception instantanée des changements) ----
+  useEffect(() => {
+    if (!currentUser || !currentUser.shopId || !dataReady) return;
+    const shopId = currentUser.shopId;
+    let channel = null;
+    try {
+      channel = supabase
+        .channel("records-" + shopId)
+        .on("postgres_changes", { event: "*", schema: "public", table: "records", filter: "shop_id=eq." + shopId }, (payload) => {
+          const r = payload.new || payload.old;
+          if (!r || !r.collection) return;
+          applyRemote([r]);
+          if (r.updated_at && (!lastPullRef.current || r.updated_at > lastPullRef.current)) lastPullRef.current = r.updated_at;
+        })
+        .subscribe();
+    } catch (e) { /* temps réel indisponible : la récupération périodique prend le relais */ }
+    return () => { try { if (channel) supabase.removeChannel(channel); } catch (e) { /* */ } };
+  }, [currentUser, dataReady]);
 
   // ---- synchro en ligne : ENVOI (local -> serveur), par élément ----
   useEffect(() => {
@@ -2664,9 +2690,9 @@ export default function App() {
         <table className="table">
           <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>Client</th><th className="r">Montant</th></tr></thead>
           <tbody>
-            {sales.slice(0, 6).map((s) => (
+            {sortColl("sales", sales).slice(0, 6).map((s) => (
               <tr key={s.id}>
-                <td className="num">{dateFr(s.date)}</td>
+                <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
                 <td>{s.label}</td>
                 <td>{clientCell(s.client)}</td>
@@ -2680,7 +2706,7 @@ export default function App() {
   );
 
   const renderSales = () => {
-    const list = sales.filter((s) => (s.label + s.client).toLowerCase().includes(q.toLowerCase()));
+    const list = sortColl("sales", sales.filter((s) => (s.label + s.client).toLowerCase().includes(q.toLowerCase())));
     return (
       <div className="card">
         <div className="card-head">
@@ -2697,7 +2723,7 @@ export default function App() {
               const bal = balanceFor(s);
               return (
               <tr key={s.id}>
-                <td className="num">{dateFr(s.date)}</td>
+                <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                 <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
                 <td>{clientCell(s.client)}</td>
@@ -2730,11 +2756,11 @@ export default function App() {
       <table className="table">
         <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th>Par</th><th className="r">Payé</th><th></th></tr></thead>
         <tbody>
-          {purchases.map((p) => {
+          {sortColl("purchases", purchases).map((p) => {
             const bal = purchaseBalance(p);
             return (
             <tr key={p.id}>
-              <td className="num">{dateFr(p.date)}</td>
+              <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
               <td>{clientCell(p.client)}</td>
               <td><Badge k={p.karat} /></td>
               <td className="r num">{g(p.weight)}</td>
@@ -3710,6 +3736,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .top-left { display:flex; align-items:center; gap:12px; }
 .topbar h1 { font-size:21px; }
 .sync-chip { display:inline-block; margin-left:10px; padding:1px 9px; border-radius:20px; font-size:10.5px; font-weight:600; background:var(--gold-soft,#f3e7c9); color:var(--gold); vertical-align:middle; }
+.cell-time { display:block; font-size:11px; color:var(--muted); margin-top:1px; }
 .sync-chip.offline, .sync-chip.error { background:#f3e3dd; color:var(--clay); }
 .sync-chip.synced { background:#e4efe6; color:var(--green); }
 .cours-ticker { display:flex; align-items:center; gap:7px; margin:0 auto; flex-wrap:wrap; cursor:pointer; }
