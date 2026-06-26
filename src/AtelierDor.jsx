@@ -3883,7 +3883,10 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .cell-time { display:block; font-size:11px; color:var(--muted); margin-top:1px; }
 .sync-chip.offline, .sync-chip.error { background:#f3e3dd; color:var(--clay); }
 .sync-chip.synced { background:#e4efe6; color:var(--green); }
-.cours-ticker { display:flex; align-items:center; gap:7px; margin:0; flex-wrap:wrap; cursor:pointer; }
+.cours-ticker { display:flex; align-items:center; gap:7px; margin:0; flex-wrap:wrap; cursor:pointer;
+  padding:8px 13px; border-radius:14px; border:1px solid rgba(184,134,47,.4);
+  background:#1c1611 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='96'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23241b12'/%3E%3Cstop offset='1' stop-color='%231a140f'/%3E%3C/linearGradient%3E%3CradialGradient id='b' cx='0.86' cy='0.12' r='0.95'%3E%3Cstop offset='0' stop-color='%23d8a441' stop-opacity='0.5'/%3E%3Cstop offset='1' stop-color='%23d8a441' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='480' height='96' fill='url(%23a)'/%3E%3Crect width='480' height='96' fill='url(%23b)'/%3E%3Ccircle cx='70' cy='74' r='26' fill='%23d8a441' opacity='0.10'/%3E%3Ccircle cx='180' cy='22' r='13' fill='%23f0c869' opacity='0.10'/%3E%3Ccircle cx='320' cy='70' r='20' fill='%23d8a441' opacity='0.08'/%3E%3Ccircle cx='440' cy='30' r='30' fill='%23b8862f' opacity='0.10'/%3E%3C/svg%3E") center/cover no-repeat;
+  box-shadow:0 4px 14px rgba(28,22,17,.18); }
 .clock-box { display:flex; flex-direction:column; align-items:flex-end; line-height:1.12; }
 .clock-time { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--gold); letter-spacing:.5px; }
 .clock-date { font-size:12px; color:var(--muted); text-transform:capitalize; margin-top:1px; }
