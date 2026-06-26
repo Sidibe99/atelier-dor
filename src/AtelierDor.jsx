@@ -1919,6 +1919,8 @@ export default function App() {
   const [q, setQ] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
+  const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | offline | error
+  const pushedRef = useRef({}); // {collection:id -> json déjà envoyé}
   const [receipt, setReceipt] = useState(null);
   const [shop, setShop] = useState({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
   const [closures, setClosures] = useState(seedClosures);
@@ -2134,6 +2136,47 @@ export default function App() {
     }, 600);
     return () => clearTimeout(t);
   }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+
+  // ---- synchro en ligne : ENVOI (local -> serveur), par élément ----
+  useEffect(() => {
+    if (!loaded) return;
+    if (!currentUser || !currentUser.shopId) return;
+    const shopId = currentUser.shopId;
+    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses };
+    const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
+    const t = setTimeout(async () => {
+      try {
+        const snap = pushedRef.current;
+        const now = new Date().toISOString();
+        const rows = [];
+        Object.entries(collections).forEach(([coll, arr]) => {
+          const seen = new Set();
+          (arr || []).forEach((item) => {
+            if (!item || item.id == null) return;
+            const idStr = String(item.id);
+            seen.add(idStr);
+            const js = JSON.stringify(item);
+            if (snap[coll + ":" + idStr] !== js) rows.push({ shop_id: shopId, collection: coll, id: idStr, data: item, updated_at: now, deleted: false });
+          });
+          Object.keys(snap).forEach((k) => {
+            if (k.indexOf(coll + ":") !== 0) return;
+            const idPart = k.slice(coll.length + 1);
+            if (!seen.has(idPart) && snap[k] !== "__del__") rows.push({ shop_id: shopId, collection: coll, id: idPart, data: {}, updated_at: now, deleted: true });
+          });
+        });
+        const setJs = JSON.stringify(settingsDoc);
+        if (snap["settings:main"] !== setJs) rows.push({ shop_id: shopId, collection: "settings", id: "main", data: settingsDoc, updated_at: now, deleted: false });
+
+        if (rows.length === 0) return;
+        setSyncState("syncing");
+        const { error } = await supabase.from("records").upsert(rows, { onConflict: "shop_id,collection,id" });
+        if (error) { setSyncState("error"); return; }
+        rows.forEach((r) => { snap[r.collection + ":" + r.id] = r.deleted ? "__del__" : JSON.stringify(r.data); });
+        setSyncState("synced");
+      } catch (e) { setSyncState("offline"); }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [loaded, currentUser, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
@@ -3416,7 +3459,7 @@ export default function App() {
             <button className="icon-btn menu-btn" onClick={() => setNavOpen((o) => !o)}><Menu size={20} /></button>
             <div>
               <h1>{titles[cur]}</h1>
-              <span className="muted small">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span>
+              <span className="muted small">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}{syncState !== "idle" && <span className={`sync-chip ${syncState}`}>{syncState === "syncing" ? "Synchronisation…" : (syncState === "offline" || syncState === "error") ? "Hors ligne" : "Synchronisé"}</span>}</span>
             </div>
           </div>
 
@@ -3518,6 +3561,9 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
   backdrop-filter:blur(8px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; flex-wrap:wrap; }
 .top-left { display:flex; align-items:center; gap:12px; }
 .topbar h1 { font-size:21px; }
+.sync-chip { display:inline-block; margin-left:10px; padding:1px 9px; border-radius:20px; font-size:10.5px; font-weight:600; background:var(--gold-soft,#f3e7c9); color:var(--gold); vertical-align:middle; }
+.sync-chip.offline, .sync-chip.error { background:#f3e3dd; color:var(--clay); }
+.sync-chip.synced { background:#e4efe6; color:var(--green); }
 .cours-ticker { display:flex; align-items:center; gap:7px; margin:0 auto; flex-wrap:wrap; cursor:pointer; }
 .ticker-live { display:inline-flex; align-items:center; }
 .assay { display:flex; flex-direction:column; align-items:center; border:1px solid var(--line);
