@@ -347,7 +347,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
     const it = gold.find((x) => x.id === id);
     if (it) { setKarat(it.karat); setWeight(String(it.weight)); setPpg(Math.round(prices[it.karat].vente)); }
   };
-  const onKarat = (k) => { setKarat(k); setPpg(Math.round(prices[k].vente)); };
+  const onKarat = (k) => { setKarat(k); if (k && prices[k]) setPpg(Math.round(prices[k].vente)); };
 
   const faconV = kind === "bijoux" ? (parseFloat(facon) || 0) : 0;
   const orTotal = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0) + faconV;
@@ -362,11 +362,11 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
     if (!valid) return;
     if (isGold) {
       const it = gold.find((x) => x.id === stockId);
-      const cost = (parseFloat(weight) || 0) * prices[karat].achat;
+      const cost = (karat && prices[karat]) ? (parseFloat(weight) || 0) * prices[karat].achat : 0;
       const defType = kind === "bijoux" ? "Bijou" : "Or";
       onSave({
         kind, client, pay, total: orTotal, cost, stockId, paid,
-        label: `${it ? it.type : defType} ${karat}K · ${g(parseFloat(weight))}`,
+        label: `${it ? it.type : defType}${karat ? ` ${karat}K` : ""} · ${g(parseFloat(weight))}`,
         karat, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: faconV,
         itemType: it ? it.type : defType,
       });
@@ -405,6 +405,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
           <Field label="Carat">
             <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>
               {KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+              <option value="0">Sans carat</option>
             </select>
           </Field>
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0,0" /></Field>
@@ -1687,7 +1688,7 @@ function buildReceipt(tx) {
     lines.push({ desc: `Or ${tx.karat}K — rachat`, detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g`, amount: tx.total });
   } else if ((tx.kind === "or" || tx.kind === "bijoux") && tx.weight) {
     lines.push({
-      desc: `${tx.itemType || "Or"} ${tx.karat}K`,
+      desc: `${tx.itemType || "Or"}${tx.karat ? ` ${tx.karat}K` : ""}`,
       detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g${tx.facon ? ` + façon ${fcfa(tx.facon)}` : ""}`,
       amount: tx.total,
     });
@@ -2037,6 +2038,8 @@ export default function App() {
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
   const [opsTab, setOpsTab] = useState("sales"); // tableau de bord : "sales" | "purchases"
   const [history, setHistory] = useState(null); // { type:"sale"|"purchase", item } pour l'historique au clic
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
   const [license, setLicense] = useState(null);
   const [licReady, setLicReady] = useState(false);
@@ -3703,7 +3706,7 @@ export default function App() {
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="brand">
           <BrandMark logo={shop.logo} />
-          <div><div className="brand-name">Atelier d'Or</div><div className="brand-sub">Gestion bijouterie</div></div>
+          <div><div className="brand-name">{shop.name || "Atelier d'Or"}</div><div className="brand-sub">{currentUser.name} · {isPatron ? "Patron" : "Vendeur"}</div></div>
         </div>
         <nav>
           {navItems.map((n) => (
@@ -3713,10 +3716,6 @@ export default function App() {
           ))}
         </nav>
         <div className="side-foot">
-          <div className="side-user">
-            <span className="avatar sm">{currentUser.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}</span>
-            <span className="side-user-main"><strong>{currentUser.name}</strong><em>{isPatron ? "Patron" : "Vendeur"}</em></span>
-          </div>
           <button className="btn logout-btn" onClick={logout}><LogOut size={15} /> Déconnexion</button>
           <div className="save-ind">
             <span className={`save-dot ${saveState}`} />
@@ -3731,12 +3730,12 @@ export default function App() {
             <button className="icon-btn menu-btn" onClick={() => setNavOpen((o) => !o)}><Menu size={20} /></button>
             <div>
               <h1>{titles[cur]}</h1>
-              <span className="muted small">{new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}{syncState !== "idle" && <span className={`sync-chip ${syncState}`}>{syncState === "syncing" ? "Synchronisation…" : (syncState === "offline" || syncState === "error") ? "Hors ligne" : "Synchronisé"}</span>}</span>
+              <span className="muted small">{now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} · <span className="clock-now">{now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>{syncState !== "idle" && <span className={`sync-chip ${syncState}`}>{syncState === "syncing" ? "Synchronisation…" : (syncState === "offline" || syncState === "error") ? "Hors ligne" : "Synchronisé"}</span>}</span>
             </div>
           </div>
 
           <div className="cours-ticker" onClick={() => go("cours")} title="Voir le cours en direct">
-            <span className="ticker-live"><span className={`dot ${coursLoading ? "pulse" : ""}`} /></span>
+            <span className="ticker-live"><span className="dot live" /></span>
             {KARATS.map((k) => (
               <div className="assay" key={k}>
                 <span className="assay-k">{k}K</span>
@@ -4032,6 +4031,9 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .src-note a:hover { text-decoration:underline; }
 .dot { width:7px; height:7px; border-radius:50%; background:var(--gold2); }
 .dot.pulse { animation:pulse 1.4s infinite; }
+.dot.live { background:#3fae6a; animation:livedot 1.3s ease-in-out infinite; }
+@keyframes livedot { 0%,100%{ box-shadow:0 0 0 0 rgba(63,174,106,.6); opacity:1; } 50%{ box-shadow:0 0 0 6px rgba(63,174,106,0); opacity:.35; } }
+.clock-now { font-variant-numeric:tabular-nums; font-weight:600; color:var(--gold); }
 @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(216,164,65,.55);} 70%{box-shadow:0 0 0 7px rgba(216,164,65,0);} 100%{box-shadow:0 0 0 0 rgba(216,164,65,0);} }
 .cours-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px; }
 .stat { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07); border-radius:12px; padding:13px; display:flex; flex-direction:column; gap:3px; }
