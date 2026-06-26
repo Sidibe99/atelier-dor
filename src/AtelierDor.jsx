@@ -3655,7 +3655,7 @@ export default function App() {
           <p className="ch-sub">Cours mondial converti en FCFA — actualisé automatiquement. Alimente les prix de toute la boutique.</p>
         </div>
         <div className="cours-grid">
-          <div className="stat"><div className="stat-ico"><Globe size={15} /></div><span className="stat-lab">Cours mondial</span><span className="stat-val">{nf.format(Math.round(spot))} $<small>/once</small></span></div>
+          <div className="stat"><div className="stat-ico"><Globe size={15} /></div><span className="stat-lab">Cours mondial</span><span className="stat-val">{nf.format(Math.round(spot))} $<small>/once</small> <span className="stat-sep">·</span> {nf.format(Math.round(spot / OZ))} $<small>/g</small></span></div>
           <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{nf.format(Math.round(rate))}<small> F</small></span></div>
           <div className="stat hl"><div className="stat-ico gold"><Coins size={15} /></div><span className="stat-lab">Or pur 24K</span><span className="stat-val">{fcfa(perGram24)}<small>/g</small></span></div>
         </div>
@@ -3870,10 +3870,6 @@ export default function App() {
 
           <div className="cours-ticker" onClick={() => go("cours")} title="Voir le cours en direct">
             <span className="ticker-live"><span className="dot live" /></span>
-            <div className="assay assay-world">
-              <span className="assay-k">Mondial/g</span>
-              <span className="assay-p num">{nf.format(Math.round(perGram24))}</span>
-            </div>
             {KARATS.map((k) => (
               <div className="assay" key={k}>
                 <span className="assay-k">{k}K</span>
@@ -4038,6 +4034,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .assay-k { font-size:10px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
 .assay-p { font-size:12px; font-weight:600; }
 .assay-world { background:var(--gold-soft,#f3e7c9); border-color:rgba(184,134,47,.5); min-width:64px; }
+.stat-sep { color:var(--muted); font-weight:400; margin:0 2px; }
 .assay-world .assay-k { color:var(--ink2,#3a2e1d); }
 .assay-world .assay-p { color:var(--gold); }
 .top-actions { display:flex; align-items:center; gap:9px; }
