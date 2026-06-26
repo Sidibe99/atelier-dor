@@ -500,7 +500,20 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
   const back = () => setDisp((s) => (s.length <= 1 ? "0" : s.slice(0, -1)));
   const pct = () => { setDisp((s) => fmt((parseFloat(s) || 0) / 100)); setFresh(true); };
 
+  // 5 - Convertisseur de devises (euro = parité fixe, dollar = taux live)
+  const EUR_XOF = 655.957;
+  const cvRates = { XOF: 1, USD: rate || 0, EUR: EUR_XOF };
+  const CUR = [{ k: "XOF", n: "FCFA", s: "F" }, { k: "USD", n: "Dollar $", s: "$" }, { k: "EUR", n: "Euro €", s: "€" }];
+  const [cvAmount, setCvAmount] = useState("");
+  const [cvFrom, setCvFrom] = useState("USD");
+  const [cvTo, setCvTo] = useState("XOF");
+  const cvVal = cvRates[cvTo] ? (parseFloat(cvAmount) || 0) * (cvRates[cvFrom] / cvRates[cvTo]) : 0;
+  const cvSym = { XOF: "F", USD: "$", EUR: "€" };
+  const cvOut = cvTo === "XOF" ? nf.format(Math.round(cvVal)) : (Math.round(cvVal * 100) / 100).toLocaleString("fr-FR");
+  const cvSwap = () => { setCvFrom(cvTo); setCvTo(cvFrom); };
+
   return (
+    <>
     <div className="calc-grid">
       <div className="card">
         <div className="card-head"><h3>Valeur d'un article</h3></div>
@@ -575,6 +588,19 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
         </div>
       </div>
     </div>
+
+    <div className="card calc-conv">
+      <div className="card-head"><h3>Convertisseur de devises</h3></div>
+      <div className="grid2">
+        <Field label="Montant"><input className="input num" type="number" value={cvAmount} onChange={(e) => setCvAmount(e.target.value)} placeholder="0" /></Field>
+        <Field label="Résultat"><div className="input input-ro num">{cvOut} {cvSym[cvTo]}</div></Field>
+        <Field label="De"><select className="input" value={cvFrom} onChange={(e) => setCvFrom(e.target.value)}>{CUR.map((c) => <option key={c.k} value={c.k}>{c.n}</option>)}</select></Field>
+        <Field label="Vers"><select className="input" value={cvTo} onChange={(e) => setCvTo(e.target.value)}>{CUR.map((c) => <option key={c.k} value={c.k}>{c.n}</option>)}</select></Field>
+      </div>
+      <button className="btn btn-line" onClick={cvSwap} style={{ marginTop: 4 }}>⇅ Inverser les devises</button>
+      <p className="src-note">1 $ = {nf.format(Math.round(rate))} F (taux en direct) · 1 € = 655,957 F (parité fixe FCFA).</p>
+    </div>
+    </>
   );
 }
 
@@ -4042,6 +4068,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .assay-world { background:var(--gold-soft,#f3e7c9); border-color:rgba(184,134,47,.5); min-width:64px; }
 .calc-hint { font-size:11.5px; color:var(--muted); margin-top:6px; line-height:1.45; background:#faf6ec; border:1px solid var(--line); border-radius:9px; padding:9px 11px; }
 .field-hint { font-size:11px; color:var(--muted); line-height:1.35; }
+.calc-conv { margin-top:16px; }
 .ticker-toggle { display:inline-flex; align-items:center; justify-content:center; border:0; cursor:pointer;
   padding:7px 13px; border-radius:9px; font-size:12.5px; font-weight:800; letter-spacing:.03em;
   color:#fff !important; white-space:nowrap; line-height:1; min-width:62px; }
