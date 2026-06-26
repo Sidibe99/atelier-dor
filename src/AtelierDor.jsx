@@ -3,7 +3,7 @@ import {
   LayoutGrid, ShoppingCart, ArrowDownLeft, Package, Users, BarChart3,
   Settings, Plus, X, Pencil, Trash2, Search, Coins, Scale, Gem, Wallet,
   TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer,
-  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload,
+  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -444,6 +444,135 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
       </Field>
       {reste > 0 && <div className="credit-note">Vente à crédit · reste dû : <strong className="num">{fcfa(reste)}</strong>{client ? "" : " — pense à indiquer le client"}</div>}
     </Modal>
+  );
+}
+
+function GoldCalc({ prices, spot, rate, perGram24 }) {
+  // 1 - Valeur d'un article
+  const [k1, setK1] = useState(21);
+  const [w1, setW1] = useState("");
+  const [ppg1, setPpg1] = useState("");
+  const [facon1, setFacon1] = useState("");
+  const wv = parseFloat(w1) || 0;
+  const sellG = k1 ? prices[k1].vente : (parseFloat(ppg1) || 0);
+  const buyG = k1 ? prices[k1].achat : (parseFloat(ppg1) || 0);
+  const fac = parseFloat(facon1) || 0;
+  const sellTotal = wv * sellG + fac;
+  const buyTotal = wv * buyG;
+
+  // 2 - Équivalent or pur
+  const [k2, setK2] = useState(18);
+  const [w2, setW2] = useState("");
+  const wv2 = parseFloat(w2) || 0;
+  const pureW = wv2 * purity(k2);
+  const pureVal = pureW * perGram24;
+
+  // 3 - Convertisseur grammes <-> FCFA (or pur 24K)
+  const [grams, setGrams] = useState("");
+  const gv = parseFloat(grams) || 0;
+  const gVal = gv * perGram24;
+  const [amount, setAmount] = useState("");
+  const av = parseFloat(amount) || 0;
+  const aGrams = perGram24 ? av / perGram24 : 0;
+
+  // 4 - Calculatrice simple (machine à états, sans eval)
+  const [disp, setDisp] = useState("0");
+  const [acc, setAcc] = useState(null);
+  const [op, setOp] = useState(null);
+  const [fresh, setFresh] = useState(true);
+  const fmt = (n) => { const r = Math.round((n + Number.EPSILON) * 100) / 100; return String(r); };
+  const digit = (d) => {
+    setDisp((s) => {
+      if (d === ".") return (fresh || s === "0") ? "0." : (s.includes(".") ? s : s + ".");
+      return (fresh || s === "0") ? d : s + d;
+    });
+    setFresh(false);
+  };
+  const applyOp = (a, b, o) => o === "+" ? a + b : o === "−" ? a - b : o === "×" ? a * b : o === "÷" ? (b ? a / b : 0) : b;
+  const chooseOp = (o) => {
+    const v = parseFloat(disp) || 0;
+    if (op !== null && !fresh) { const r = applyOp(acc, v, op); setAcc(r); setDisp(fmt(r)); } else setAcc(v);
+    setOp(o); setFresh(true);
+  };
+  const equals = () => { if (op !== null) { const v = parseFloat(disp) || 0; const r = applyOp(acc == null ? 0 : acc, v, op); setDisp(fmt(r)); setAcc(null); setOp(null); setFresh(true); } };
+  const clearAll = () => { setDisp("0"); setAcc(null); setOp(null); setFresh(true); };
+  const back = () => setDisp((s) => (s.length <= 1 ? "0" : s.slice(0, -1)));
+  const pct = () => { setDisp((s) => fmt((parseFloat(s) || 0) / 100)); setFresh(true); };
+
+  return (
+    <div className="calc-grid">
+      <div className="card">
+        <div className="card-head"><h3>Valeur d'un article</h3></div>
+        <div className="grid2">
+          <Field label="Carat">
+            <select className="input" value={k1} onChange={(e) => setK1(parseInt(e.target.value))}>
+              {KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+              <option value="0">Sans carat</option>
+            </select>
+          </Field>
+          <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={w1} onChange={(e) => setW1(e.target.value)} placeholder="0,0" /></Field>
+          {!k1 && <Field label="Prix / g"><input className="input num" type="number" value={ppg1} onChange={(e) => setPpg1(e.target.value)} placeholder="0" /></Field>}
+          <Field label="Façon (optionnel)"><input className="input num" type="number" value={facon1} onChange={(e) => setFacon1(e.target.value)} placeholder="0" /></Field>
+        </div>
+        <div className="calc-res">
+          <div><span className="lab">Tu rachètes</span><span className="val" style={{ color: "var(--clay)" }}>{fcfa(buyTotal)}</span></div>
+          <div><span className="lab">Tu vends</span><span className="val" style={{ color: "var(--green)" }}>{fcfa(sellTotal)}</span></div>
+        </div>
+        {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix saisi manuellement.</p>}
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h3>Équivalent or pur (24K)</h3></div>
+        <div className="grid2">
+          <Field label="Carat">
+            <select className="input" value={k2} onChange={(e) => setK2(parseInt(e.target.value))}>{KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}</select>
+          </Field>
+          <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={w2} onChange={(e) => setW2(e.target.value)} placeholder="0,0" /></Field>
+        </div>
+        <div className="calc-res">
+          <div><span className="lab">Or pur ({Math.round(purity(k2) * 100)}%)</span><span className="val">{g(pureW)}</span></div>
+          <div><span className="lab">Valeur or pur</span><span className="val" style={{ color: "var(--gold)" }}>{fcfa(pureVal)}</span></div>
+        </div>
+        <p className="src-note">{g(wv2)} de {k2}K contient {g(pureW)} d'or pur (cours 24K : {fcfa(perGram24)}/g).</p>
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h3>Convertisseur (or pur 24K)</h3></div>
+        <div className="grid2">
+          <Field label="Grammes → FCFA"><input className="input num" type="number" step="0.1" value={grams} onChange={(e) => setGrams(e.target.value)} placeholder="0,0" /></Field>
+          <Field label="= Valeur"><div className="input input-ro num">{fcfa(gVal)}</div></Field>
+          <Field label="FCFA → grammes"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></Field>
+          <Field label="= Poids"><div className="input input-ro num">{g(aGrams)}</div></Field>
+        </div>
+        <p className="src-note">Cours mondial : {nf.format(Math.round(spot))} $/once · taux : {nf.format(Math.round(rate))} F/$ · or pur : {fcfa(perGram24)}/g.</p>
+      </div>
+
+      <div className="card">
+        <div className="card-head"><h3>Calculatrice</h3></div>
+        <div className="calc-disp">{op ? <span className="calc-op-ind">{acc != null ? nf.format(acc) : ""} {op}</span> : null}{disp}</div>
+        <div className="calc-pad">
+          <button className="calc-key fn" onClick={clearAll}>C</button>
+          <button className="calc-key fn" onClick={back}>⌫</button>
+          <button className="calc-key fn" onClick={pct}>%</button>
+          <button className="calc-key op" onClick={() => chooseOp("÷")}>÷</button>
+          <button className="calc-key" onClick={() => digit("7")}>7</button>
+          <button className="calc-key" onClick={() => digit("8")}>8</button>
+          <button className="calc-key" onClick={() => digit("9")}>9</button>
+          <button className="calc-key op" onClick={() => chooseOp("×")}>×</button>
+          <button className="calc-key" onClick={() => digit("4")}>4</button>
+          <button className="calc-key" onClick={() => digit("5")}>5</button>
+          <button className="calc-key" onClick={() => digit("6")}>6</button>
+          <button className="calc-key op" onClick={() => chooseOp("−")}>−</button>
+          <button className="calc-key" onClick={() => digit("1")}>1</button>
+          <button className="calc-key" onClick={() => digit("2")}>2</button>
+          <button className="calc-key" onClick={() => digit("3")}>3</button>
+          <button className="calc-key op" onClick={() => chooseOp("+")}>+</button>
+          <button className="calc-key wide" onClick={() => digit("0")}>0</button>
+          <button className="calc-key" onClick={() => digit(".")}>,</button>
+          <button className="calc-key eq" onClick={equals}>=</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2665,6 +2794,7 @@ export default function App() {
     { id: "depenses", label: "Dépenses", icon: TrendingDown },
     { id: "reports", label: "Rapports", icon: BarChart3 },
     { id: "cours", label: "Cours de l'or", icon: Coins },
+    { id: "calc", label: "Calculatrice", icon: Calculator },
     { id: "settings", label: "Paramètres", icon: Settings },
     { id: "abo", label: "Abonnement", icon: Wallet },
   ];
@@ -3661,8 +3791,8 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, settings: renderSettings, abo: renderAbo };
-  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", settings: "Paramètres", abo: "Abonnement" };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} />, settings: renderSettings, abo: renderAbo };
+  const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
     return (<div className="app"><style>{CSS}</style><AdminSpace onExit={exitAdmin} shop={shop} setShop={setShop} users={users} setUsers={setUsers} resellerPhone={resellerPhone} setResellerPhone={setResellerPhone} /></div>);
@@ -3942,6 +4072,22 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .karat { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; color:var(--gold);
   border:1px solid var(--gold); border-radius:6px; padding:2px 7px; display:inline-block; }
 .pct { font-size:11px; color:var(--muted); margin-left:4px; }
+.calc-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.calc-res { display:flex; gap:12px; margin-top:8px; }
+.calc-res > div { flex:1; background:#faf6ec; border:1px solid var(--line); border-radius:11px; padding:11px 13px; display:flex; flex-direction:column; gap:2px; }
+.calc-res .lab { font-size:12px; color:var(--muted); }
+.calc-res .val { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+.input-ro { background:#f6f1e6; display:flex; align-items:center; font-weight:700; }
+.calc-disp { background:var(--ink); color:#fff; border-radius:12px; padding:14px 18px; text-align:right; font-size:27px; font-weight:700; font-variant-numeric:tabular-nums; overflow:hidden; min-height:34px; position:relative; }
+.calc-op-ind { position:absolute; left:16px; top:8px; font-size:13px; font-weight:600; color:var(--gold2); }
+.calc-pad { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:10px; }
+.calc-key { padding:15px 0; border-radius:11px; border:1px solid var(--line); background:var(--card); font-size:17px; font-weight:600; cursor:pointer; color:var(--ink); }
+.calc-key:hover { background:#f3ecdd; }
+.calc-key.fn { background:#efe8d9; color:var(--muted); }
+.calc-key.op { background:var(--gold-soft); color:var(--gold); }
+.calc-key.eq { background:var(--gold); color:#fff; border-color:var(--gold); }
+.calc-key.wide { grid-column:span 2; }
+@media (max-width:760px){ .calc-grid { grid-template-columns:1fr; } }
 .achat { color:var(--clay); font-weight:600; } .vente { color:var(--green); font-weight:600; }
 .pill { font-size:11px; font-weight:600; padding:2px 9px; border-radius:20px; }
 .pill-gold { background:var(--gold-soft); color:var(--gold); }
