@@ -447,15 +447,16 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   );
 }
 
-function GoldCalc({ prices, spot, rate, perGram24 }) {
+function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
   // 1 - Valeur d'un article
   const [k1, setK1] = useState(21);
   const [w1, setW1] = useState("");
   const [ppg1, setPpg1] = useState("");
   const [facon1, setFacon1] = useState("");
   const wv = parseFloat(w1) || 0;
-  const sellG = k1 ? prices[k1].vente : (parseFloat(ppg1) || 0);
-  const buyG = k1 ? prices[k1].achat : (parseFloat(ppg1) || 0);
+  const refPpg = parseFloat(ppg1) || 0;
+  const sellG = k1 ? prices[k1].vente : refPpg * (1 + (mVente || 0) / 100);
+  const buyG = k1 ? prices[k1].achat : refPpg * (1 - (mAchat || 0) / 100);
   const fac = parseFloat(facon1) || 0;
   const sellTotal = wv * sellG + fac;
   const buyTotal = wv * buyG;
@@ -511,14 +512,15 @@ function GoldCalc({ prices, spot, rate, perGram24 }) {
             </select>
           </Field>
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={w1} onChange={(e) => setW1(e.target.value)} placeholder="0,0" /></Field>
-          {!k1 && <Field label="Prix / g"><input className="input num" type="number" value={ppg1} onChange={(e) => setPpg1(e.target.value)} placeholder="0" /></Field>}
-          <Field label="Façon (optionnel)"><input className="input num" type="number" value={facon1} onChange={(e) => setFacon1(e.target.value)} placeholder="0" /></Field>
+          {!k1 && <Field label="Prix de référence / g"><input className="input num" type="number" value={ppg1} onChange={(e) => setPpg1(e.target.value)} placeholder="0" /><span className="field-hint">Valeur de base du gramme (ni achat ni vente) — l'app en déduit les deux</span></Field>}
+          <Field label="Façon (optionnel)"><input className="input num" type="number" value={facon1} onChange={(e) => setFacon1(e.target.value)} placeholder="0" /><span className="field-hint">Main-d'œuvre ajoutée au prix de vente (bijoux)</span></Field>
         </div>
         <div className="calc-res">
           <div><span className="lab">Tu rachètes</span><span className="val" style={{ color: "var(--clay)" }}>{fcfa(buyTotal)}</span></div>
           <div><span className="lab">Tu vends</span><span className="val" style={{ color: "var(--green)" }}>{fcfa(sellTotal)}</span></div>
         </div>
-        {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix saisi manuellement.</p>}
+        {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix de référence {fcfa(refPpg)}/g · rachat −{mAchat}% = {fcfa(buyG)}/g · vente +{mVente}% = {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p>}
+        {!k1 && <p className="calc-hint">ℹ️ Le <b>prix de référence</b> est ta base du gramme (la valeur de l'or au moment du calcul). L'app en déduit automatiquement le <b style={{ color: "var(--clay)" }}>rachat</b> (− marge) et la <b style={{ color: "var(--green)" }}>vente</b> (+ marge). Pour un calcul exact selon la pureté, choisis plutôt le <b>carat réel</b> au lieu de « Sans carat ».</p>}
       </div>
 
       <div className="card">
@@ -3792,7 +3794,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} />, settings: renderSettings, abo: renderAbo };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} />, settings: renderSettings, abo: renderAbo };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -4038,6 +4040,8 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .assay-k { font-size:10px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
 .assay-p { font-size:12px; font-weight:600; }
 .assay-world { background:var(--gold-soft,#f3e7c9); border-color:rgba(184,134,47,.5); min-width:64px; }
+.calc-hint { font-size:11.5px; color:var(--muted); margin-top:6px; line-height:1.45; background:#faf6ec; border:1px solid var(--line); border-radius:9px; padding:9px 11px; }
+.field-hint { font-size:11px; color:var(--muted); line-height:1.35; }
 .ticker-toggle { display:inline-flex; align-items:center; justify-content:center; border:0; cursor:pointer;
   padding:7px 13px; border-radius:9px; font-size:12.5px; font-weight:800; letter-spacing:.03em;
   color:#fff !important; white-space:nowrap; line-height:1; min-width:62px; }
