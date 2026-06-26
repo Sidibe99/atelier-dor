@@ -791,17 +791,54 @@ function ShopFormModal({ mode, shop, onClose, onSubmit }) {
   const [phone, setPhone] = useState(shop ? (shop.phone || "") : "");
   const [plan, setPlan] = useState(shop && shop.plan ? shop.plan : "S");
   const [expiry, setExpiry] = useState(() => computeExpiry(shop && shop.plan ? shop.plan : "S"));
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [done, setDone] = useState(null); // { email, password } après création du compte
   const pickPlan = (p) => { setPlan(p); setExpiry(computeExpiry(p)); };
+  const genPwd = () => {
+    const a = "ABCDEFGHJKMNPQRSTUVWXYZ", n = "23456789";
+    let s = "";
+    for (let i = 0; i < 3; i++) s += a[Math.floor(Math.random() * a.length)];
+    for (let i = 0; i < 4; i++) s += n[Math.floor(Math.random() * n.length)];
+    setPwd(s); setErr("");
+  };
   const submit = async () => {
     if (mode === "create" && !name.trim()) { setErr("Indique le nom de la boutique."); return; }
     if (!expiry) { setErr("Choisis une date de fin."); return; }
+    if (mode === "create" && (email.trim() || pwd)) {
+      if (!email.trim() || !pwd) { setErr("Pour créer le compte, remplis l'e-mail ET le mot de passe (ou laisse les deux vides)."); return; }
+      if (pwd.length < 6) { setErr("Mot de passe : au moins 6 caractères."); return; }
+    }
     setBusy(true); setErr("");
-    try { await onSubmit({ name: name.trim(), phone: phone.trim(), plan, expiry }); }
-    catch (e) { setErr("Opération impossible. Vérifie ta connexion internet."); setBusy(false); return; }
-    setBusy(false);
+    try {
+      const res = await onSubmit({ name: name.trim(), phone: phone.trim(), plan, expiry, email: email.trim().toLowerCase(), password: pwd });
+      if (mode === "create" && res && res.account) { setDone(res.account); setBusy(false); return; }
+      onClose();
+    } catch (e) { setErr(e && e.message ? e.message : "Opération impossible. Vérifie ta connexion internet."); setBusy(false); }
   };
+
+  if (done) {
+    const waPhone = String(phone || "").replace(/[^\d]/g, "");
+    const waMsg = `Bonjour, voici vos accès à l'application Atelier d'Or :\n\nLien : https://atelierdorpro.com\nE-mail : ${done.email}\nMot de passe : ${done.password}\n\nOuvrez le lien, entrez l'e-mail et le mot de passe pour vous connecter.`;
+    const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}` : null;
+    return (
+      <Modal title="Compte client créé" sub={name} onClose={onClose}
+        footer={<button className="btn btn-gold" onClick={onClose}>Terminé</button>}>
+        <p className="muted small" style={{ margin: "0 0 12px" }}>Transmets ces identifiants à ton client. Note-les : le mot de passe ne sera plus affiché ensuite.</p>
+        <div className="creds-box">
+          <div className="creds-row"><span>E-mail</span><b>{done.email}</b></div>
+          <div className="creds-row"><span>Mot de passe</span><b>{done.password}</b></div>
+        </div>
+        <div className="data-actions" style={{ marginTop: 12 }}>
+          <button className="btn btn-line" onClick={() => { try { navigator.clipboard.writeText(`E-mail : ${done.email}\nMot de passe : ${done.password}`); } catch (e) { /* */ } }}>Copier</button>
+          {waUrl && <a className="btn btn-gold" href={waUrl} target="_blank" rel="noreferrer">Envoyer sur WhatsApp</a>}
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       title={mode === "create" ? "Nouvelle boutique" : "Renouveler l'abonnement"}
@@ -822,6 +859,19 @@ function ShopFormModal({ mode, shop, onClose, onSubmit }) {
         </div>
       </Field>
       <Field label="Date de fin (modifiable à la main)"><input className="act-input" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></Field>
+      {mode === "create" && (
+        <>
+          <div className="creds-sep">Compte de connexion du client (optionnel)</div>
+          <Field label="E-mail du client"><input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="boutique@exemple.com" /></Field>
+          <Field label="Mot de passe">
+            <div className="pwd-row">
+              <input className="act-input" value={pwd} onChange={(e) => { setPwd(e.target.value); setErr(""); }} placeholder="6 caractères minimum" />
+              <button type="button" className="btn btn-line" onClick={genPwd}>Générer</button>
+            </div>
+          </Field>
+          <p className="muted small" style={{ margin: "2px 0 0" }}>Laisse vide pour créer la boutique sans compte (tu pourras le faire plus tard).</p>
+        </>
+      )}
       {err && <p className="lock-err">{err}</p>}
     </Modal>
   );
@@ -988,10 +1038,30 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   }, [authUser.id]);
   useEffect(() => { load(); }, [load]);
 
-  const createShop = async ({ name, phone, plan, expiry }) => {
-    const { error } = await supabase.from("shops").insert({ name, phone, plan, expiry, status: "active" });
+  const accountErr = (code) => {
+    if (code === "champs_manquants") return "Compte non créé : e-mail ou mot de passe manquant.";
+    if (code === "mot_de_passe_court") return "Mot de passe : au moins 6 caractères.";
+    if (code === "non_autorise") return "Action réservée au revendeur.";
+    if (code === "non_authentifie") return "Reconnecte-toi puis réessaie.";
+    if (code === "creation_compte") return "Compte non créé : cet e-mail est peut-être déjà utilisé.";
+    if (code === "lien_boutique") return "Compte créé mais non relié à la boutique. Réessaie.";
+    return "Le compte n'a pas pu être créé.";
+  };
+  const createShop = async ({ name, phone, plan, expiry, email, password }) => {
+    const { data, error } = await supabase.from("shops").insert({ name, phone, plan, expiry, status: "active" }).select().single();
     if (error) throw error;
-    setModal(null); await load();
+    let account = null;
+    if (email && password) {
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-client-account", {
+        body: { email, password, shop_id: data.id, name, role: "admin" },
+      });
+      const msg = fnErr ? "Boutique créée, mais le compte n'a pas pu être créé (connexion ?)."
+        : (fnData && fnData.error) ? accountErr(fnData.error) : null;
+      if (msg) { await load(); const e = new Error(msg); throw e; }
+      account = { email, password };
+    }
+    await load();
+    return { shop: data, account };
   };
   const renewShop = async (shop, { plan, expiry }) => {
     const { error } = await supabase.from("shops").update({ plan, expiry, status: "active" }).eq("id", shop.id);
@@ -3526,6 +3596,14 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .admin-bar strong { font-family:'Fraunces',serif; font-size:17px; }
 .admin-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 .plan-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.creds-sep { margin:16px 0 10px; padding-top:14px; border-top:1px solid var(--line); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.pwd-row { display:flex; gap:8px; align-items:center; }
+.pwd-row .act-input { flex:1; }
+.creds-box { border:1px solid var(--line); border-radius:11px; background:#faf6ec; padding:6px 14px; }
+.creds-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); }
+.creds-row:last-child { border-bottom:none; }
+.creds-row span { color:var(--muted); font-size:13px; }
+.creds-row b { color:var(--ink); font-size:15px; font-family:ui-monospace,monospace; }
 .plan { border:1px solid var(--line); background:var(--card); border-radius:9px; padding:8px 14px; font:inherit; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; }
 .plan.on { background:var(--gold-soft); color:var(--gold); border-color:var(--gold); }
 .code-out { margin-top:14px; padding:16px; border:1px dashed var(--gold); border-radius:11px; background:#faf6ec; text-align:center; }
