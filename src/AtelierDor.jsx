@@ -112,6 +112,18 @@ const sortColl = (coll, arr) => {
   if (!k) return arr;
   return [...arr].sort(cmpRecent(k));
 };
+
+// statut de paiement d'une vente/achat
+const payStatusOf = (total, paid, returned) => {
+  if (returned) return { label: "Retournée", cls: "pst-ret" };
+  if ((paid || 0) >= (total || 0)) return { label: "Payé", cls: "pst-paid" };
+  if ((paid || 0) > 0) return { label: "Partiel", cls: "pst-part" };
+  return { label: "Non payé", cls: "pst-none" };
+};
+function StatusPill({ total, paid, returned }) {
+  const s = payStatusOf(total, paid, returned);
+  return <span className={`pill ${s.cls}`} style={{ marginLeft: 6 }}>{s.label}</span>;
+}
 const PAID_FORMULAS = ["S", "P", "R"];
 let LIVE_PRICES = null; // prix chargés depuis Supabase (sinon repli sur FORMULAS)
 function priceLabelOf(plan) {
@@ -2702,7 +2714,7 @@ export default function App() {
               <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
-                <td>{s.label}</td>
+                <td>{s.label}<StatusPill total={s.total} paid={s.total - balanceFor(s)} returned={s.returned} /></td>
                 <td>{clientCell(s.client)}</td>
                 <td className="r num pos">+{fcfa(s.total)}</td>
               </tr>
@@ -2710,7 +2722,7 @@ export default function App() {
               <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
                 <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
                 <td><span className="pill pill-clay">Achat or</span></td>
-                <td>{p.karat}K · {g(p.weight)}</td>
+                <td>{p.karat}K · {g(p.weight)}<StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></td>
                 <td>{clientCell(p.client)}</td>
                 <td className="r num neg">−{fcfa(p.total)}</td>
               </tr>
@@ -2741,7 +2753,7 @@ export default function App() {
               <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
-                <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
+                <td>{s.label}<StatusPill total={s.total} paid={s.total - bal} returned={s.returned} />{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
                 <td>{clientCell(s.client)}</td>
                 <td className="muted">{s.by || "—"}</td>
                 <td className="muted">{s.pay}</td>
@@ -2785,6 +2797,7 @@ export default function App() {
               <td className="muted">{p.by || "—"}</td>
               <td className="r num neg">
                 −{fcfa(purchasePaidFor(p.id))}
+                <div><StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></div>
                 {bal > 0 && <div className="mini-warn">reste {fcfa(bal)}</div>}
               </td>
               <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
@@ -3729,6 +3742,12 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <div className="data-actions" style={{ marginTop: 14, marginBottom: 0 }}>
+              <button className="btn btn-line" onClick={() => { setHistory(null); setReceipt(buildReceipt(isSale ? it : { ...it, paid: purchasePaidFor(it.id), kind: "purchase" })); }}>{isSale ? "Voir le reçu" : "Bordereau"}</button>
+              {isSale && bal > 0 && <button className="btn btn-gold" onClick={() => { setHistory(null); setAcompteFor(it); }}>Encaisser</button>}
+              {isSale && !it.returned && <button className="btn btn-clay" onClick={() => { setHistory(null); setReturnFor(it); }}>Retour</button>}
+              {!isSale && bal > 0 && <button className="btn btn-clay" onClick={() => { setHistory(null); setSettleFor(it); }}>Solder</button>}
+            </div>
           </Modal>
         );
       })()}
@@ -3840,6 +3859,10 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .pill-gold { background:var(--gold-soft); color:var(--gold); }
 .pill-ink { background:#ece5d6; color:var(--ink2); }
 .pill-clay { background:#f3e3dd; color:var(--clay); }
+.pst-paid { background:#e4efe6; color:var(--green); }
+.pst-part { background:var(--gold-soft,#f3e7c9); color:var(--gold); }
+.pst-none { background:#f3e3dd; color:var(--clay); }
+.pst-ret { background:#ece5d6; color:var(--ink2); }
 .row-click { cursor:pointer; }
 .row-click:hover { background:rgba(184,134,47,.06); }
 .hist-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:12px 14px; background:#faf6ec; border:1px solid var(--line); border-radius:11px; margin-bottom:14px; }
