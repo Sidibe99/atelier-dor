@@ -957,6 +957,151 @@ function AccountModal({ shop, onClose, onSubmit }) {
   );
 }
 
+function VendorModal({ onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);
+  const genPwd = () => {
+    const a = "ABCDEFGHJKMNPQRSTUVWXYZ", n = "23456789";
+    let s = "";
+    for (let i = 0; i < 3; i++) s += a[Math.floor(Math.random() * a.length)];
+    for (let i = 0; i < 4; i++) s += n[Math.floor(Math.random() * n.length)];
+    setPwd(s); setErr("");
+  };
+  const vendErr = (code, max) => {
+    if (code === "limite_atteinte") return `Limite de vendeurs atteinte (${max}). Passe à une formule supérieure pour en ajouter.`;
+    if (code === "mot_de_passe_court") return "Mot de passe : au moins 6 caractères.";
+    if (code === "non_autorise") return "Action réservée au patron.";
+    if (code === "non_authentifie") return "Reconnecte-toi puis réessaie.";
+    if (code === "creation_compte") return "Compte non créé : cet e-mail est peut-être déjà utilisé.";
+    if (code === "champs_manquants") return "Remplis l'e-mail et le mot de passe.";
+    return "Le compte n'a pas pu être créé.";
+  };
+  const submit = async () => {
+    if (!email.trim() || !pwd) { setErr("Remplis l'e-mail et le mot de passe."); return; }
+    if (pwd.length < 6) { setErr("Mot de passe : au moins 6 caractères."); return; }
+    setBusy(true); setErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke("create-vendor-account", {
+        body: { email: email.trim().toLowerCase(), password: pwd, name: name.trim() },
+      });
+      if (error) { setErr("Création impossible (connexion ?)."); setBusy(false); return; }
+      if (data && data.error) { setErr(vendErr(data.error, data.max)); setBusy(false); return; }
+      setDone({ email: email.trim().toLowerCase(), password: pwd }); setBusy(false);
+    } catch (e) { setErr("Création impossible. Vérifie ta connexion."); setBusy(false); }
+  };
+  if (done) {
+    return (
+      <Modal title="Compte vendeur créé" sub={name || done.email} onClose={onCreated} footer={<button className="btn btn-gold" onClick={onCreated}>Terminé</button>}>
+        <p className="muted small" style={{ margin: "0 0 12px" }}>Transmets ces identifiants à ton vendeur. Note-les : le mot de passe ne sera plus affiché ensuite.</p>
+        <div className="creds-box">
+          <div className="creds-row"><span>E-mail</span><b>{done.email}</b></div>
+          <div className="creds-row"><span>Mot de passe</span><b>{done.password}</b></div>
+        </div>
+        <div className="data-actions" style={{ marginTop: 12 }}>
+          <button className="btn btn-line" onClick={() => { try { navigator.clipboard.writeText(`E-mail : ${done.email}\nMot de passe : ${done.password}`); } catch (e) { /* */ } }}>Copier</button>
+        </div>
+      </Modal>
+    );
+  }
+  return (
+    <Modal title="Nouvel employé (vendeur)" onClose={onClose}
+      footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={submit} disabled={busy}>{busy ? "…" : "Créer le compte"}</button></>}>
+      <Field label="Nom du vendeur"><input className="act-input" value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="Ex. Awa Ndiaye" /></Field>
+      <Field label="E-mail"><input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="vendeur@exemple.com" /></Field>
+      <Field label="Mot de passe">
+        <div className="pwd-row">
+          <input className="act-input" value={pwd} onChange={(e) => { setPwd(e.target.value); setErr(""); }} placeholder="6 caractères minimum" />
+          <button type="button" className="btn btn-line" onClick={genPwd}>Générer</button>
+        </div>
+      </Field>
+      {err && <p className="lock-err">{err}</p>}
+    </Modal>
+  );
+}
+
+function OnlineTeam({ shopId, plan, meId, onBack }) {
+  const [team, setTeam] = useState(null); // null = chargement
+  const [err, setErr] = useState("");
+  const [modal, setModal] = useState(false);
+  const f = FORMULAS[plan] || FORMULAS.S;
+  const load = useCallback(async () => {
+    setErr("");
+    try {
+      const { data, error } = await supabase.from("profiles").select("id, role, name, email").eq("shop_id", shopId);
+      if (error) throw error;
+      setTeam(data || []);
+    } catch (e) { setErr("Impossible de charger l'équipe. Vérifie ta connexion."); setTeam([]); }
+  }, [shopId]);
+  useEffect(() => { load(); }, [load]);
+
+  const removeVendor = async (id) => {
+    if (typeof window !== "undefined" && !window.confirm("Retirer ce vendeur ? Il ne pourra plus se connecter.")) return;
+    try {
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
+      if (error) throw error;
+      await load();
+    } catch (e) { setErr("Suppression impossible."); }
+  };
+
+  const list = team || [];
+  const admins = list.filter((u) => u.role === "admin");
+  const vendeurs = list.filter((u) => u.role === "vendeur");
+  const full = vendeurs.length >= (f.users || 2);
+
+  return (
+    <>
+      <button className="btn btn-line btn-xs" style={{ marginBottom: 14 }} onClick={onBack}>← Retour aux paramètres</button>
+      <div className="card lic-card">
+        <div className="card-head"><h3>Formule active</h3><span className="pill pill-gold">{f.name}</span></div>
+        <p className="muted small" style={{ margin: 0 }}>
+          {f.admins >= 99 ? "admins illimités" : `${admins.length}/${f.admins} admin${f.admins > 1 ? "s" : ""}`}
+          {" · "}{f.users >= 99 ? "vendeurs illimités" : `${vendeurs.length}/${f.users} vendeurs`}
+        </p>
+      </div>
+      <div className="card">
+        <div className="card-head">
+          <h3>Équipe en ligne <span className="count">{list.length}</span></h3>
+          <button className="btn btn-gold" onClick={() => setModal(true)} disabled={full}><Plus size={16} /> Nouvel employé</button>
+        </div>
+        {team === null ? (
+          <p className="muted small" style={{ margin: 0 }}>Chargement…</p>
+        ) : list.length === 0 ? (
+          <p className="muted small" style={{ margin: 0 }}>Aucun compte pour cette boutique.</p>
+        ) : (
+          <table className="table">
+            <thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th></th></tr></thead>
+            <tbody>
+              {list.map((u) => (
+                <tr key={u.id}>
+                  <td><strong>{u.name || "—"}</strong>{u.id === meId && <span className="mini-tag">moi</span>}</td>
+                  <td className="muted">{u.email || "—"}</td>
+                  <td><span className={`pill ${u.role === "admin" ? "pill-gold" : "pill-ink"}`}>{u.role === "admin" ? "Patron" : "Vendeur"}</span></td>
+                  <td className="r">{u.role === "vendeur" && u.id !== meId && (
+                    <button className="icon-btn" onClick={() => removeVendor(u.id)}><Trash2 size={15} /></button>
+                  )}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {full && <p className="muted small" style={{ marginTop: 10 }}>Limite de vendeurs atteinte pour la formule {f.name}. Passe à une formule supérieure pour en ajouter.</p>}
+        {err && <p className="lock-err">{err}</p>}
+      </div>
+      <div className="card">
+        <div className="card-head"><h3>Comment ça marche</h3></div>
+        <p className="muted small" style={{ margin: 0 }}>
+          Chaque employé se connecte en ligne avec son <strong>e-mail et son mot de passe</strong>, sur la même adresse que toi. Le <strong>patron</strong> a accès à tout ; le <strong>vendeur</strong> accède aux ventes, achats, stock, clients, crédits, caisse et dépenses. Crée un compte vendeur ci-dessus puis transmets-lui ses identifiants.
+        </p>
+      </div>
+      {modal && <VendorModal onClose={() => setModal(false)} onCreated={() => { setModal(false); load(); }} />}
+    </>
+  );
+}
+
 function PricingModal({ onClose, onSaved }) {
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -2128,7 +2273,7 @@ export default function App() {
     const expS = shopRow.expiry ? String(shopRow.expiry).slice(0, 10) : "";
     setLicense({ valid: true, plan: shopRow.plan || "S", lifetime: false, expiry: expS ? new Date(expS) : null, code: "online" });
     const mail = authUser && authUser.email ? authUser.email : "";
-    setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur" });
+    setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur", shopId: shopRow.id });
     setView("dash"); setOnlineReady(true);
   }, [authUser]);
   const activate = (c) => {
@@ -2937,56 +3082,9 @@ export default function App() {
     );
   };
 
-  const renderEquipe = () => {
-    const f = license ? FORMULAS[license.plan] : null;
-    const nbAdmins = users.filter((u) => u.role === "patron").length;
-    const nbVend = users.filter((u) => u.role === "vendeur").length;
-    return (
-    <>
-      <button className="btn btn-line btn-xs" style={{ marginBottom: 14 }} onClick={() => go("settings")}>← Retour aux paramètres</button>
-      {f && (
-        <div className="card lic-card">
-          <div className="card-head"><h3>Formule active</h3><span className={`pill ${f.trial ? "pill-ink" : "pill-gold"}`}>{f.name}</span></div>
-          <p className="muted small" style={{ margin: "0 0 4px" }}>
-            {license.lifetime ? "Sans expiration" : `Expire le ${dateFull(new Date(license.expiry))}`}
-            {" · "}{f.admins >= 99 ? "admins illimités" : `${nbAdmins}/${f.admins} admin${f.admins > 1 ? "s" : ""}`}
-            {" · "}{f.users >= 99 ? "utilisateurs illimités" : `${nbVend}/${f.users} utilisateurs`}
-          </p>
-          {f.trial && <p className="muted small" style={{ margin: 0 }}>Essai gratuit — à la fin, choisis une formule pour continuer.</p>}
-        </div>
-      )}
-      <div className="card">
-        <div className="card-head">
-          <h3>Équipe & accès <span className="count">{users.length}</span></h3>
-          <button className="btn btn-gold" onClick={() => setModal({ type: "user" })}><Plus size={16} /> Nouvel employé</button>
-        </div>
-        <table className="table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Mot de passe</th><th></th></tr></thead>
-          <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td><strong>{u.name}</strong>{currentUser && u.id === currentUser.id && <span className="mini-tag">moi</span>}</td>
-                <td className="muted">{u.email || "—"}</td>
-                <td><span className={`pill ${u.role === "patron" ? "pill-gold" : "pill-ink"}`}>{u.role === "patron" ? "Patron" : "Vendeur"}</span></td>
-                <td className="num muted">••••••</td>
-                <td className="r"><div className="rowbtns">
-                  <button className="icon-btn" onClick={() => setModal({ type: "user", data: u })}><Pencil size={15} /></button>
-                  <button className="icon-btn" onClick={() => delUser(u.id)}><Trash2 size={15} /></button>
-                </div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="card">
-        <div className="card-head"><h3>Comment ça marche</h3></div>
-        <p className="muted small" style={{ margin: 0 }}>
-          À chaque ouverture, l'app se verrouille : chaque employé se connecte avec son <strong>identifiant (ou e-mail) et son mot de passe</strong>. Le <strong>patron</strong> a accès à tout (rapports, équipe, réglages) ; le <strong>vendeur</strong> accède aux ventes, achats, stock, clients, crédits, caisse et dépenses. Chaque vente, rachat et clôture retient automatiquement <em>qui</em> l'a faite.
-        </p>
-      </div>
-    </>
-    );
-  };
+  const renderEquipe = () => (
+    <OnlineTeam shopId={currentUser.shopId} plan={license ? license.plan : "S"} meId={currentUser.id} onBack={() => go("settings")} />
+  );
 
   const renderReports = () => {
     const pSales = sales.filter((s) => inPeriod(s.date, reportPeriod));
@@ -3135,8 +3233,8 @@ export default function App() {
   const renderSettings = () => (
     <>
       <div className="card">
-        <div className="card-head"><h3><ShieldCheck size={15} /> Utilisateurs & équipe</h3><span className="muted">{users.length} compte(s)</span></div>
-        <p className="muted small" style={{ margin: "0 0 14px" }}>Gère les comptes de connexion (patron et vendeurs) : qui peut se connecter et avec quels droits.</p>
+        <div className="card-head"><h3><ShieldCheck size={15} /> Utilisateurs & équipe</h3></div>
+        <p className="muted small" style={{ margin: "0 0 14px" }}>Gère les comptes de connexion en ligne (patron et vendeurs) : qui peut se connecter et avec quels droits.</p>
         <button className="btn btn-gold" onClick={() => go("equipe")}><Users size={15} /> Gérer les utilisateurs</button>
       </div>
 
