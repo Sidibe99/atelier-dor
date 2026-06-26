@@ -1921,7 +1921,11 @@ export default function App() {
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | offline | error
   const [netTick, setNetTick] = useState(0); // incrémenté pour forcer une tentative de synchro
-  const pushedRef = useRef({}); // {collection:id -> json déjà envoyé}
+  const [dataReady, setDataReady] = useState(false); // true quand le local correspond bien à la boutique (après hydratation)
+  const pushedRef = useRef({}); // {collection:id -> json déjà synchronisé}
+  const lastPullRef = useRef(null); // dernier updated_at récupéré
+  const dataShopRef = useRef(null); // boutique à laquelle appartient le local
+  const settingsRef = useRef(null); // réglages locaux à jour (pour la fusion)
   const [receipt, setReceipt] = useState(null);
   const [shop, setShop] = useState({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
   const [closures, setClosures] = useState(seedClosures);
@@ -2157,10 +2161,124 @@ export default function App() {
     };
   }, []);
 
+  // garde les réglages locaux à jour (pour la fusion sans écraser une modif locale)
+  useEffect(() => { settingsRef.current = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone }; }, [prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+
+  // au changement de boutique connectée, on rebascule en "non prêt" (réhydratation)
+  useEffect(() => { setDataReady(false); dataShopRef.current = null; pushedRef.current = {}; lastPullRef.current = null; }, [currentUser ? currentUser.shopId : null]);
+
+  const applyRemoteSettingsData = (d) => {
+    if (!d) return;
+    if (typeof d.prime === "number") setPrime(d.prime);
+    if (typeof d.mVente === "number") setMVente(d.mVente);
+    if (typeof d.mAchat === "number") setMAchat(d.mAchat);
+    if (d.shop) setShop(d.shop);
+    if (typeof d.fondCaisse === "number") setFondCaisse(d.fondCaisse);
+    if (typeof d.resellerPhone === "string") setResellerPhone(d.resellerPhone);
+  };
+
+  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses };
+
+  // remplace tout le local par la version serveur (adoption d'une boutique sur un nouvel appareil)
+  const hydrateFromServer = (rows) => {
+    const snap = {};
+    const byColl = {};
+    rows.forEach((r) => { (byColl[r.collection] = byColl[r.collection] || []).push(r); });
+    Object.entries(SYNC_SETTERS).forEach(([coll, setter]) => {
+      const live = (byColl[coll] || []).filter((r) => !r.deleted);
+      setter(live.map((r) => r.data));
+      (byColl[coll] || []).forEach((r) => { snap[coll + ":" + r.id] = r.deleted ? "__del__" : JSON.stringify(r.data); });
+    });
+    const setR = (byColl["settings"] || []).find((r) => String(r.id) === "main" && !r.deleted);
+    if (setR) { applyRemoteSettingsData(setR.data); snap["settings:main"] = JSON.stringify(setR.data); }
+    pushedRef.current = snap;
+  };
+
+  // fusion d'une collection : applique le serveur, mais garde les éléments modifiés localement (non encore envoyés)
+  const mergeColl = (coll, prev, rows) => {
+    const snap = pushedRef.current;
+    const map = new Map((prev || []).map((it) => [String(it.id), it]));
+    let changed = false;
+    rows.forEach((r) => {
+      const key = coll + ":" + r.id;
+      const local = map.get(String(r.id));
+      const pendingLocal = local && JSON.stringify(local) !== snap[key];
+      if (pendingLocal) return;
+      if (r.deleted) {
+        if (local) { map.delete(String(r.id)); changed = true; }
+        snap[key] = "__del__";
+      } else {
+        const js = JSON.stringify(r.data);
+        if (!local || JSON.stringify(local) !== js) { map.set(String(r.id), r.data); changed = true; }
+        snap[key] = js;
+      }
+    });
+    return changed ? Array.from(map.values()) : prev;
+  };
+
+  const applyRemote = (rows) => {
+    const byColl = {};
+    rows.forEach((r) => { (byColl[r.collection] = byColl[r.collection] || []).push(r); });
+    Object.entries(byColl).forEach(([coll, rs]) => {
+      if (coll === "settings") {
+        const r = rs.find((x) => String(x.id) === "main");
+        if (r && !r.deleted) {
+          const snap = pushedRef.current;
+          const cur = settingsRef.current;
+          const curJs = cur ? JSON.stringify(cur) : undefined;
+          const pending = snap["settings:main"] !== undefined && curJs !== undefined && curJs !== snap["settings:main"];
+          if (!pending) { applyRemoteSettingsData(r.data); snap["settings:main"] = JSON.stringify(r.data); }
+        }
+        return;
+      }
+      const setter = SYNC_SETTERS[coll];
+      if (setter) setter((prev) => mergeColl(coll, prev, rs));
+    });
+  };
+
+  // ---- synchro en ligne : RÉCUPÉRATION (serveur -> local) ----
+  useEffect(() => {
+    if (!loaded || !currentUser || !currentUser.shopId) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    const shopId = currentUser.shopId;
+    let cancelled = false;
+    (async () => {
+      try {
+        // le local appartient-il déjà à cette boutique ?
+        let belongs = dataShopRef.current === shopId;
+        if (!belongs) { try { belongs = (await STORE.get("atelierdor:datashop")) === shopId; } catch (e) { /* */ } }
+        if (cancelled) return;
+        if (!belongs) {
+          // adoption : on prend la version serveur (ou vide si boutique neuve)
+          const { data, error } = await supabase.from("records").select("collection, id, data, updated_at, deleted").eq("shop_id", shopId);
+          if (error || cancelled) return;
+          hydrateFromServer(data || []);
+          let mx = null; (data || []).forEach((r) => { if (!mx || r.updated_at > mx) mx = r.updated_at; });
+          lastPullRef.current = mx;
+          dataShopRef.current = shopId;
+          try { await STORE.set("atelierdor:datashop", shopId); } catch (e) { /* */ }
+          setDataReady(true); setSyncState("synced");
+          return;
+        }
+        if (!dataReady) setDataReady(true);
+        // récupération incrémentale
+        let q = supabase.from("records").select("collection, id, data, updated_at, deleted").eq("shop_id", shopId);
+        if (lastPullRef.current) q = q.gt("updated_at", lastPullRef.current);
+        const { data, error } = await q;
+        if (error || !data || cancelled || data.length === 0) return;
+        applyRemote(data);
+        let mx = lastPullRef.current; data.forEach((r) => { if (!mx || r.updated_at > mx) mx = r.updated_at; });
+        lastPullRef.current = mx;
+      } catch (e) { /* hors ligne : on réessaiera */ }
+    })();
+    return () => { cancelled = true; };
+  }, [loaded, currentUser, dataReady, netTick]);
+
   // ---- synchro en ligne : ENVOI (local -> serveur), par élément ----
   useEffect(() => {
     if (!loaded) return;
     if (!currentUser || !currentUser.shopId) return;
+    if (!dataReady) return;
     const shopId = currentUser.shopId;
     const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
@@ -2197,7 +2315,7 @@ export default function App() {
       } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
