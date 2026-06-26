@@ -2707,23 +2707,23 @@ export default function App() {
             <button className={`seg-btn ${opsTab === "purchases" ? "active" : ""}`} onClick={() => setOpsTab("purchases")}>Achats</button>
           </div>
         </div>
-        <table className="table">
-          <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>Client</th><th className="r">Montant</th></tr></thead>
+        <table className="table fit">
+          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="r">Montant</th></tr></thead>
           <tbody>
             {opsTab === "sales" ? sortColl("sales", sales).slice(0, 10).map((s) => (
               <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
-                <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
+                <td className="hide-sm"><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
                 <td>{s.label}<StatusPill total={s.total} paid={s.total - balanceFor(s)} returned={s.returned} /></td>
-                <td>{clientCell(s.client)}</td>
+                <td className="hide-sm">{clientCell(s.client)}</td>
                 <td className="r num pos">+{fcfa(s.total)}</td>
               </tr>
             )) : sortColl("purchases", purchases).slice(0, 10).map((p) => (
               <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
                 <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
-                <td><span className="pill pill-clay">Achat or</span></td>
+                <td className="hide-sm"><span className="pill pill-clay">Achat or</span></td>
                 <td>{p.karat}K · {g(p.weight)}<StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></td>
-                <td>{clientCell(p.client)}</td>
+                <td className="hide-sm">{clientCell(p.client)}</td>
                 <td className="r num neg">−{fcfa(p.total)}</td>
               </tr>
             ))}
@@ -2744,20 +2744,20 @@ export default function App() {
             <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>
           </div>
         </div>
-        <table className="table">
-          <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>Client</th><th>Vendeur</th><th>Paiement</th><th className="r">Marge</th><th className="r">Total</th><th></th></tr></thead>
+        <table className="table fit">
+          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="hide-sm">Vendeur</th><th className="hide-sm">Paiement</th><th className="r hide-sm">Marge</th><th className="r">Total</th><th></th></tr></thead>
           <tbody>
             {list.map((s) => {
               const bal = balanceFor(s);
               return (
               <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
-                <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
+                <td className="hide-sm"><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                 <td>{s.label}<StatusPill total={s.total} paid={s.total - bal} returned={s.returned} />{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
-                <td>{clientCell(s.client)}</td>
-                <td className="muted">{s.by || "—"}</td>
-                <td className="muted">{s.pay}</td>
-                <td className="r num">{fcfa(s.total - s.cost)}</td>
+                <td className="hide-sm">{clientCell(s.client)}</td>
+                <td className="muted hide-sm">{s.by || "—"}</td>
+                <td className="muted hide-sm">{s.pay}</td>
+                <td className="r num hide-sm">{fcfa(s.total - s.cost)}</td>
                 <td className="r num pos">{fcfa(s.total)}</td>
                 <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
                   {!s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
@@ -2781,8 +2781,8 @@ export default function App() {
           <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>
         </div>
       </div>
-      <table className="table">
-        <thead><tr><th>Date</th><th>Client</th><th>Carat</th><th className="r">Poids</th><th className="r">Prix/g</th><th>Note</th><th>Par</th><th className="r">Payé</th><th></th></tr></thead>
+      <table className="table fit">
+        <thead><tr><th>Date</th><th>Client</th><th className="hide-sm">Carat</th><th className="r">Poids</th><th className="r hide-sm">Prix/g</th><th className="hide-sm">Note</th><th className="hide-sm">Par</th><th className="r">Payé</th><th></th></tr></thead>
         <tbody>
           {sortColl("purchases", purchases).map((p) => {
             const bal = purchaseBalance(p);
@@ -2790,11 +2790,11 @@ export default function App() {
             <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
               <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
               <td>{clientCell(p.client)}</td>
-              <td><Badge k={p.karat} /></td>
+              <td className="hide-sm"><Badge k={p.karat} /></td>
               <td className="r num">{g(p.weight)}</td>
-              <td className="r num">{fcfa(p.ppg)}</td>
-              <td className="muted">{p.note}</td>
-              <td className="muted">{p.by || "—"}</td>
+              <td className="r num hide-sm">{fcfa(p.ppg)}</td>
+              <td className="muted hide-sm">{p.note}</td>
+              <td className="muted hide-sm">{p.by || "—"}</td>
               <td className="r num neg">
                 −{fcfa(purchasePaidFor(p.id))}
                 <div><StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></div>
@@ -4175,6 +4175,9 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .card { overflow-x:auto; }
   .cours-ticker { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .table { min-width:540px; }
+  .table.fit { min-width:0; }
+  .table.fit th, .table.fit td { padding:10px 7px; font-size:13px; }
+  .hide-sm { display:none !important; }
 }
 @media (max-width:460px){ .kpis { grid-template-columns:1fr; } }
 /* ----- Espace revendeur ----- */
