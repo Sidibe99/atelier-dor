@@ -954,11 +954,15 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [allowed, setAllowed] = useState(null); // null = en cours, true, false
   const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
+      const { data: prof } = await supabase.from("profiles").select("is_reseller").eq("id", authUser.id).maybeSingle();
+      if (!prof || !prof.is_reseller) { setAllowed(false); setLoading(false); return; }
+      setAllowed(true);
       const { data, error } = await supabase.from("shops").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       setShops(data || []);
@@ -968,7 +972,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       } catch (e2) { setPayments([]); }
     } catch (e) { setErr("Impossible de charger les boutiques. Vérifie ta connexion."); }
     finally { setLoading(false); }
-  }, []);
+  }, [authUser.id]);
   useEffect(() => { load(); }, [load]);
 
   const createShop = async ({ name, phone, plan, expiry }) => {
@@ -1010,6 +1014,19 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const monthKey = TODAY.slice(0, 7);
   const encaisseMois = payments.reduce((sum, p) => sum + (String(p.paid_on).slice(0, 7) === monthKey ? (p.amount || 0) : 0), 0);
   const activeCount = shops.filter((s) => s.status !== "suspended" && (!s.expiry || String(s.expiry).slice(0, 10) >= TODAY)).length;
+
+  if (allowed === false) {
+    return (
+      <div className="lock">
+        <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Accès réservé</div><div className="lock-sub">Espace revendeur</div></div>
+        <div className="act-box">
+          <p className="lock-q">Ce compte n'est pas un compte revendeur.</p>
+          <a className="btn btn-gold act-btn" href="#client">Aller à ma boutique</a>
+          <button className="btn btn-line" style={{ marginTop: 8 }} onClick={onSignOut}>Déconnexion</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="reseller">
