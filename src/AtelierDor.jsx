@@ -2188,7 +2188,7 @@ export default function App() {
         const setJs = JSON.stringify(settingsDoc);
         if (snap["settings:main"] !== setJs) rows.push({ shop_id: shopId, collection: "settings", id: "main", data: settingsDoc, updated_at: now, deleted: false });
 
-        if (rows.length === 0) return;
+        if (rows.length === 0) { setSyncState("synced"); return; }
         setSyncState("syncing");
         const { error } = await supabase.from("records").upsert(rows, { onConflict: "shop_id,collection,id" });
         if (error) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); return; }
@@ -2340,8 +2340,9 @@ export default function App() {
   const login = (u) => { setCurrentUser(u); setView("dash"); try { STORE.set("atelierdor:session", u.id); } catch (e) { /* */ } };
   const logout = () => {
     try { STORE.del("atelierdor:session"); } catch (e) { /* */ }
+    try { STORE.del("atelierdor:view"); } catch (e) { /* */ }
     try { supabase.auth.signOut(); } catch (e) { /* */ }
-    setOnlineReady(false); setCurrentUser(null); setNavOpen(false);
+    setOnlineReady(false); setCurrentUser(null); setView("dash"); setNavOpen(false);
   };
   // entrée en ligne : reconstitue licence + utilisateur à partir de la boutique Supabase
   const enterOnline = useCallback((profile, shopRow) => {
@@ -2349,7 +2350,7 @@ export default function App() {
     setLicense({ valid: true, plan: shopRow.plan || "S", lifetime: false, expiry: expS ? new Date(expS) : null, code: "online" });
     const mail = authUser && authUser.email ? authUser.email : "";
     setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur", shopId: shopRow.id });
-    setView("dash"); setOnlineReady(true);
+    setOnlineReady(true);
   }, [authUser]);
   const activate = (c) => {
     const v = verifyActivation(c);
