@@ -292,7 +292,7 @@ const seedUsers = [
 const INITIAL_CASH = 3200000;
 
 /* ------------------------------ composants ------------------------------ */
-const Badge = ({ k }) => <span className="karat">{k}K</span>;
+const Badge = ({ k }) => <span className="karat">{k ? k + "K" : "brut"}</span>;
 
 const Kpi = ({ icon: Icon, label, value, sub, tone = "gold" }) => (
   <div className="card kpi">
@@ -328,7 +328,7 @@ const Modal = ({ title, sub, onClose, children, footer }) => (
 );
 
 /* ------------------------------- modales -------------------------------- */
-function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
+function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle }) {
   const [kind, setKind] = useState("or");
   const [client, setClient] = useState("");
   const [pay, setPay] = useState("Espèces");
@@ -340,6 +340,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
   const [dId, setDId] = useState("");
   const [dQty, setDQty] = useState(1);
   const [paidNow, setPaidNow] = useState("");
+  const [customName, setCustomName] = useState(""); // désignation libre (or/bijou hors stock)
   const isGold = kind === "or" || kind === "bijoux";
 
   const onPickStock = (id) => {
@@ -354,7 +355,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
   const dItem = divers.find((x) => x.id === dId);
   const dTotal = dItem ? dItem.price * (parseInt(dQty) || 0) : 0;
   const total = isGold ? orTotal : dTotal;
-  const valid = isGold ? weight && ppg : dItem && dQty > 0;
+  const valid = isGold ? weight && ppg : (dItem && dQty > 0);
   const paid = paidNow === "" ? total : Math.min(parseFloat(paidNow) || 0, total);
   const reste = total - paid;
 
@@ -364,11 +365,12 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
       const it = gold.find((x) => x.id === stockId);
       const cost = (karat && prices[karat]) ? (parseFloat(weight) || 0) * prices[karat].achat : 0;
       const defType = kind === "bijoux" ? "Bijou" : "Or";
+      const name = it ? it.type : (customName.trim() || defType);
       onSave({
         kind, client, pay, total: orTotal, cost, stockId, paid,
-        label: `${it ? it.type : defType}${karat ? ` ${karat}K` : ""} · ${g(parseFloat(weight))}`,
+        label: `${name}${karat ? ` ${karat}K` : ""} · ${g(parseFloat(weight))}`,
         karat, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: faconV,
-        itemType: it ? it.type : defType,
+        itemType: name,
       });
     } else {
       const cost = dItem.cost * (parseInt(dQty) || 0);
@@ -402,6 +404,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
               {gold.map((it) => <option key={it.id} value={it.id}>{it.type} {it.karat}K · {g(it.weight)} ({it.qty} dispo)</option>)}
             </select>
           </Field>
+          {!stockId && <Field label="Désignation (optionnel)"><input className="input" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder={kind === "bijoux" ? "ex : Bague mariage" : "ex : Lingot, Chaîne…"} /></Field>}
           <Field label="Carat">
             <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>
               {KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
@@ -418,9 +421,10 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave }) {
       ) : (
         <div className="grid2">
           <Field label="Article divers">
-            <select className="input" value={dId} onChange={(e) => setDId(e.target.value)}>
+            <select className="input" value={dId} onChange={(e) => { const v = e.target.value; if (v === "__new__") { onNewArticle && onNewArticle(); } else { setDId(v); } }}>
               <option value="">— Choisir —</option>
               {divers.map((it) => <option key={it.id} value={it.id}>{it.name} · {fcfa(it.price)} ({it.qty} {it.unit})</option>)}
+              <option value="__new__">➕ Nouvel article (à enregistrer)</option>
             </select>
           </Field>
           <Field label="Quantité"><input className="input num" type="number" min="1" value={dQty} onChange={(e) => setDQty(e.target.value)} /></Field>
@@ -451,7 +455,7 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
   const [note, setNote] = useState("");
   const [pay, setPay] = useState("Espèces");
   const [paidNow, setPaidNow] = useState("");
-  const onKarat = (k) => { setKarat(k); setPpg(Math.round(prices[k].achat)); };
+  const onKarat = (k) => { setKarat(k); if (k && prices[k]) setPpg(Math.round(prices[k].achat)); };
   const total = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0);
   const paid = paidNow === "" ? total : Math.min(parseFloat(paidNow) || 0, total);
   const reste = total - paid;
@@ -467,7 +471,7 @@ function PurchaseModal({ prices, clients, onClose, onSave }) {
       </>}>
       <div className="grid2">
         <Field label="Carat">
-          <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>{KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}</select>
+          <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>{KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}<option value="0">Sans carat (or brut)</option></select>
         </Field>
         <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0,0" /></Field>
         <Field label="Prix / g (rachat du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} /></Field>
@@ -1685,7 +1689,7 @@ function buildReceipt(tx) {
   const isSale = tx.kind !== "purchase";
   const lines = [];
   if (!isSale) {
-    lines.push({ desc: `Or ${tx.karat}K — rachat`, detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g`, amount: tx.total });
+    lines.push({ desc: `Or${tx.karat ? ` ${tx.karat}K` : " brut"} — rachat`, detail: `${g(tx.weight)} × ${fcfa(tx.ppg)}/g`, amount: tx.total });
   } else if ((tx.kind === "or" || tx.kind === "bijoux") && tx.weight) {
     lines.push({
       desc: `${tx.itemType || "Or"}${tx.karat ? ` ${tx.karat}K` : ""}`,
@@ -2794,7 +2798,7 @@ export default function App() {
               <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
                 <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
                 <td className="hide-sm"><span className="pill pill-clay">Achat or</span></td>
-                <td>{p.karat}K · {g(p.weight)}<StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></td>
+                <td>{p.karat ? p.karat + "K" : "Or brut"} · {g(p.weight)}<StatusPill total={p.total} paid={purchasePaidFor(p.id)} /></td>
                 <td className="hide-sm">{clientCell(p.client)}</td>
                 <td className="r num neg">−{fcfa(p.total)}</td>
               </tr>
@@ -3761,7 +3765,7 @@ export default function App() {
         <main className="content">{VIEWS[cur]()}</main>
       </div>
 
-      {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} onClose={() => setModal(null)} onSave={addSale} />}
+      {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} onClose={() => setModal(null)} onSave={addSale} onNewArticle={() => { go("stock"); setStockTab("divers"); setModal({ type: "divers" }); }} />}
       {modal?.type === "purchase" && <PurchaseModal prices={prices} clients={clients} onClose={() => setModal(null)} onSave={addPurchase} />}
       {modal?.type === "gold" && <GoldModal item={modal.data} onClose={() => setModal(null)} onSave={saveGold} />}
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
