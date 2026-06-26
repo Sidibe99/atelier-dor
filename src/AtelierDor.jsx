@@ -654,7 +654,7 @@ function LockScreen({ users, onUnlock, openAdmin, logo }) {
   );
 }
 
-function OnlineLogin({ onExit, logo }) {
+function OnlineLogin({ onExit, logo, sub = "Espace en ligne", heading = "Connexion à ton compte" }) {
   const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState("");
@@ -671,15 +671,103 @@ function OnlineLogin({ onExit, logo }) {
   };
   return (
     <div className="lock">
-      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">Espace en ligne</div></div>
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">{sub}</div></div>
       <div className="act-box">
-        <p className="lock-q">Connexion à ton compte</p>
+        <p className="lock-q">{heading}</p>
         <input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="Adresse e-mail" onKeyDown={(e) => e.key === "Enter" && submit()} />
         <input className="act-input" type="password" value={pwd} onChange={(e) => { setPwd(e.target.value); setErr(""); }} placeholder="Mot de passe" onKeyDown={(e) => e.key === "Enter" && submit()} />
         {err && <p className="lock-err">{err}</p>}
         <button className="btn btn-gold act-btn" onClick={submit} disabled={busy}>{busy ? "Connexion…" : "Se connecter"}</button>
       </div>
       {onExit && <button className="editor-link" onClick={onExit}>Retour à l'application</button>}
+    </div>
+  );
+}
+
+function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo }) {
+  const [profile, setProfile] = useState(null);
+  const [shop, setShop] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const load = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const { data: prof, error: e1 } = await supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle();
+      if (e1) throw e1;
+      setProfile(prof || null);
+      if (prof && prof.shop_id) {
+        const { data: sh, error: e2 } = await supabase.from("shops").select("*").eq("id", prof.shop_id).maybeSingle();
+        if (e2) throw e2;
+        setShop(sh || null);
+      } else { setShop(null); }
+    } catch (e) { setErr("Impossible de vérifier ta boutique. Vérifie ta connexion."); }
+    finally { setLoading(false); }
+  }, [authUser.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const waReseller = () => {
+    const p = String(resellerPhone || "").replace(/[^\d]/g, "");
+    const msg = "Bonjour, je souhaite réactiver / renouveler mon abonnement Atelier d'Or.";
+    return p ? `https://wa.me/${p}?text=${encodeURIComponent(msg)}` : null;
+  };
+
+  if (loading) {
+    return (<div className="lock"><div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-sub">Vérification…</div></div></div>);
+  }
+  if (profile && profile.is_reseller) {
+    return (
+      <div className="lock">
+        <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Compte revendeur</div><div className="lock-sub">Mauvais espace</div></div>
+        <div className="act-box">
+          <p className="lock-q">Ce compte est un compte revendeur.</p>
+          <a className="btn btn-gold act-btn" href="#espace">Aller à l'espace revendeur</a>
+          <button className="btn btn-line" style={{ marginTop: 8 }} onClick={onSignOut}>Déconnexion</button>
+        </div>
+      </div>
+    );
+  }
+  if (err || !profile || !shop) {
+    return (
+      <div className="lock">
+        <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">Atelier d'Or</div><div className="lock-sub">Accès</div></div>
+        <div className="act-box">
+          <p className="lock-q">{err || "Aucune boutique n'est rattachée à ce compte."}</p>
+          {err ? <button className="btn btn-gold act-btn" onClick={load}>Réessayer</button> : null}
+          <button className="btn btn-line" style={{ marginTop: 8 }} onClick={onSignOut}>Déconnexion</button>
+        </div>
+      </div>
+    );
+  }
+
+  const exp = shop.expiry ? String(shop.expiry).slice(0, 10) : "";
+  const expired = exp && exp < TODAY;
+  const blocked = shop.status === "suspended" || expired;
+
+  if (blocked) {
+    const wa = waReseller();
+    return (
+      <div className="lock">
+        <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">{shop.name}</div><div className="lock-sub">Accès suspendu</div></div>
+        <div className="act-box">
+          <p className="lock-q">{shop.status === "suspended" ? "Ton abonnement est suspendu." : "Ton abonnement a expiré."}</p>
+          <p className="muted small" style={{ marginBottom: 10 }}>Contacte ton revendeur pour réactiver l'accès.</p>
+          {wa && <a className="btn btn-gold act-btn" href={wa} target="_blank" rel="noreferrer">Contacter le revendeur</a>}
+          <button className="btn btn-line" style={{ marginTop: 8 }} onClick={onSignOut}>Déconnexion</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lock">
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">{shop.name}</div><div className="lock-sub">Accès autorisé</div></div>
+      <div className="act-box">
+        <p className="lock-q">Boutique active ✓</p>
+        <p className="muted small" style={{ marginBottom: 4 }}>{authUser.email} · {profile.role === "admin" ? "Chef de boutique" : "Vendeur"}</p>
+        {shop.expiry && <p className="muted small" style={{ marginBottom: 10 }}>Abonnement {FORMULAS[shop.plan] ? FORMULAS[shop.plan].name : shop.plan} · jusqu'au {dateFr(exp)}</p>}
+        <button className="btn btn-gold act-btn" onClick={onSignOut}>Déconnexion</button>
+      </div>
+      {onExit && <button className="editor-link" onClick={onExit}>Retour</button>}
     </div>
   );
 }
@@ -1496,7 +1584,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false); // session en ligne restaurée ?
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
-  const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : "app"; });
+  const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
   const [license, setLicense] = useState(null);
   const [licReady, setLicReady] = useState(false);
   const [resellerPhone, setResellerPhone] = useState("");
@@ -1666,7 +1754,7 @@ export default function App() {
 
   // ---- routage #admin-create + vérification de la licence ----
   useEffect(() => {
-    const onHash = () => { const h = (window.location.hash || "").replace(/^#/, ""); setRoute(h === "admin-create" ? "admin" : h === "espace" ? "espace" : "app"); };
+    const onHash = () => { const h = (window.location.hash || "").replace(/^#/, ""); setRoute(h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"); };
     window.addEventListener("hashchange", onHash);
     (async () => {
       try {
@@ -1864,6 +1952,7 @@ export default function App() {
   const exitAdmin = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
   const authSignOut = async () => { try { await supabase.auth.signOut(); } catch (e) { /* */ } setAuthUser(null); };
   const exitEspace = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
+  const exitClient = () => { try { window.location.hash = ""; } catch (e) { /* */ } setRoute("app"); };
 
   const buildBackupJson = () => JSON.stringify({
     _app: "AtelierDor", _exportedAt: new Date().toISOString(),
@@ -2935,6 +3024,17 @@ export default function App() {
           : !authUser
             ? (<OnlineLogin onExit={exitEspace} logo={shop.logo} />)
             : (<ResellerSpace authUser={authUser} onSignOut={authSignOut} onExit={exitEspace} onPricesSaved={loadPrices} logo={shop.logo} />)}
+      </div>
+    );
+  }
+  if (route === "client") {
+    return (
+      <div className="app"><style>{CSS}</style>
+        {!authReady
+          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
+          : !authUser
+            ? (<OnlineLogin onExit={exitClient} logo={shop.logo} sub="Ta boutique" heading="Connexion à ta boutique" />)
+            : (<ClientGate authUser={authUser} onSignOut={authSignOut} onExit={exitClient} resellerPhone={resellerPhone} logo={shop.logo} />)}
       </div>
     );
   }
