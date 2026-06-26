@@ -1954,6 +1954,8 @@ export default function App() {
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
+  const [opsTab, setOpsTab] = useState("sales"); // tableau de bord : "sales" | "purchases"
+  const [history, setHistory] = useState(null); // { type:"sale"|"purchase", item } pour l'historique au clic
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
   const [license, setLicense] = useState(null);
   const [licReady, setLicReady] = useState(false);
@@ -2686,17 +2688,31 @@ export default function App() {
       )}
 
       <div className="card">
-        <div className="card-head"><h3>Dernières opérations</h3></div>
+        <div className="card-head">
+          <h3>Dernières opérations</h3>
+          <div className="seg" style={{ marginBottom: 0 }}>
+            <button className={`seg-btn ${opsTab === "sales" ? "active" : ""}`} onClick={() => setOpsTab("sales")}>Ventes</button>
+            <button className={`seg-btn ${opsTab === "purchases" ? "active" : ""}`} onClick={() => setOpsTab("purchases")}>Achats</button>
+          </div>
+        </div>
         <table className="table">
           <thead><tr><th>Date</th><th>Type</th><th>Détail</th><th>Client</th><th className="r">Montant</th></tr></thead>
           <tbody>
-            {sortColl("sales", sales).slice(0, 6).map((s) => (
-              <tr key={s.id}>
+            {opsTab === "sales" ? sortColl("sales", sales).slice(0, 10).map((s) => (
+              <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>Vente {(KIND_LABEL[s.kind] || "Or").toLowerCase()}</span></td>
                 <td>{s.label}</td>
                 <td>{clientCell(s.client)}</td>
                 <td className="r num pos">+{fcfa(s.total)}</td>
+              </tr>
+            )) : sortColl("purchases", purchases).slice(0, 10).map((p) => (
+              <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
+                <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
+                <td><span className="pill pill-clay">Achat or</span></td>
+                <td>{p.karat}K · {g(p.weight)}</td>
+                <td>{clientCell(p.client)}</td>
+                <td className="r num neg">−{fcfa(p.total)}</td>
               </tr>
             ))}
           </tbody>
@@ -2722,7 +2738,7 @@ export default function App() {
             {list.map((s) => {
               const bal = balanceFor(s);
               return (
-              <tr key={s.id}>
+              <tr key={s.id} className="row-click" onClick={() => setHistory({ type: "sale", item: s })}>
                 <td className="num">{dateFr(s.date)}{s.time && <span className="cell-time">{s.time}</span>}</td>
                 <td><span className={`pill ${s.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[s.kind] || "Or"}</span></td>
                 <td>{s.label}{bal > 0 && <span className="mini-warn">reste {fcfa(bal)}</span>}{s.returned && <span className="pill pill-ink" style={{ marginLeft: 6 }}>retournée</span>}</td>
@@ -2731,7 +2747,7 @@ export default function App() {
                 <td className="muted">{s.pay}</td>
                 <td className="r num">{fcfa(s.total - s.cost)}</td>
                 <td className="r num pos">{fcfa(s.total)}</td>
-                <td className="r"><div className="rowbtns">
+                <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
                   {!s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
                   <button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button>
                 </div></td>
@@ -2759,7 +2775,7 @@ export default function App() {
           {sortColl("purchases", purchases).map((p) => {
             const bal = purchaseBalance(p);
             return (
-            <tr key={p.id}>
+            <tr key={p.id} className="row-click" onClick={() => setHistory({ type: "purchase", item: p })}>
               <td className="num">{dateFr(p.date)}{p.time && <span className="cell-time">{p.time}</span>}</td>
               <td>{clientCell(p.client)}</td>
               <td><Badge k={p.karat} /></td>
@@ -2771,7 +2787,7 @@ export default function App() {
                 −{fcfa(purchasePaidFor(p.id))}
                 {bal > 0 && <div className="mini-warn">reste {fcfa(bal)}</div>}
               </td>
-              <td className="r"><div className="rowbtns">
+              <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
                 {bal > 0 && <button className="btn btn-xs btn-clay" onClick={() => setSettleFor(p)}>Solder</button>}
                 <button className="icon-btn" title="Voir le bordereau" onClick={() => setReceipt(buildReceipt({ ...p, paid: purchasePaidFor(p.id), kind: "purchase" }))}><Receipt size={15} /></button>
               </div></td>
@@ -3681,6 +3697,41 @@ export default function App() {
       {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
       {formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}
       {returnFor && <RetourModal sale={returnFor} onClose={() => setReturnFor(null)} onSave={(p) => recordReturn(returnFor, p)} />}
+      {history && (() => {
+        const it = history.item;
+        const isSale = history.type === "sale";
+        const pays = (isSale ? payments.filter((p) => p.saleId === it.id) : purchasePayments.filter((p) => p.purchaseId === it.id));
+        const paidSum = pays.reduce((a, b) => a + (b.amount || 0), 0);
+        const total = it.total || 0;
+        const bal = Math.max(0, total - paidSum);
+        const ev = [];
+        ev.push({ date: it.date, t: it.time || "", label: isSale ? "Vente enregistrée" : "Achat enregistré", detail: isSale ? it.label : `${it.karat}K · ${g(it.weight)}`, amount: total, by: it.by, kind: "create" });
+        pays.forEach((p, i) => ev.push({ date: p.date, t: p.time || "", label: i === 0 ? "Paiement initial" : "Versement", detail: p.pay, amount: p.amount, by: p.by, kind: "pay" }));
+        if (it.returned) ev.push({ date: it.date, t: "", label: "Vente retournée", detail: "", amount: null, kind: "return" });
+        ev.sort((a, b) => String(a.date + a.t).localeCompare(String(b.date + b.t)));
+        return (
+          <Modal title={isSale ? "Historique de la vente" : "Historique de l'achat"} sub={isSale ? it.label : (it.client || "")} onClose={() => setHistory(null)}
+            footer={<button className="btn btn-line" onClick={() => setHistory(null)}>Fermer</button>}>
+            <div className="hist-grid">
+              <div><span className="muted small">Client</span><b>{it.client || "—"}</b></div>
+              <div><span className="muted small">Total</span><b>{fcfa(total)}</b></div>
+              <div><span className="muted small">Payé</span><b className="pos">{fcfa(paidSum)}</b></div>
+              <div><span className="muted small">Reste</span><b className={bal > 0 ? "neg" : "pos"}>{fcfa(bal)}</b></div>
+            </div>
+            <div className="timeline">
+              {ev.map((e, i) => (
+                <div className="tl-item" key={i}>
+                  <span className={`tl-dot ${e.kind}`} />
+                  <div className="tl-body">
+                    <div className="tl-top"><strong>{e.label}</strong>{e.amount != null && <span className={`num ${e.kind === "pay" ? "pos" : ""}`}>{fcfa(e.amount)}</span>}</div>
+                    <div className="muted small">{dateFr(e.date)}{e.t ? ` · ${e.t}` : ""}{e.detail ? ` · ${e.detail}` : ""}{e.by ? ` · ${e.by}` : ""}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
     </div>
@@ -3788,6 +3839,20 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .pill { font-size:11px; font-weight:600; padding:2px 9px; border-radius:20px; }
 .pill-gold { background:var(--gold-soft); color:var(--gold); }
 .pill-ink { background:#ece5d6; color:var(--ink2); }
+.pill-clay { background:#f3e3dd; color:var(--clay); }
+.row-click { cursor:pointer; }
+.row-click:hover { background:rgba(184,134,47,.06); }
+.hist-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:12px 14px; background:#faf6ec; border:1px solid var(--line); border-radius:11px; margin-bottom:14px; }
+.hist-grid span { display:block; }
+.hist-grid b { font-size:15px; }
+.timeline { display:flex; flex-direction:column; gap:2px; }
+.tl-item { display:flex; gap:12px; padding:8px 0; }
+.tl-dot { width:10px; height:10px; border-radius:50%; background:var(--gold); margin-top:5px; flex:none; }
+.tl-dot.pay { background:var(--green); }
+.tl-dot.return { background:var(--clay); }
+.tl-body { flex:1; min-width:0; }
+.tl-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+@media (max-width:560px){ .hist-grid { grid-template-columns:repeat(2,1fr); } }
 
 .btn { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:9px; padding:9px 15px;
   font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; transition:.15s; white-space:nowrap; }
