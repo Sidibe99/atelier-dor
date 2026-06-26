@@ -1920,6 +1920,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | offline | error
+  const [netTick, setNetTick] = useState(0); // incrémenté pour forcer une tentative de synchro
   const pushedRef = useRef({}); // {collection:id -> json déjà envoyé}
   const [receipt, setReceipt] = useState(null);
   const [shop, setShop] = useState({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
@@ -2137,6 +2138,25 @@ export default function App() {
     return () => clearTimeout(t);
   }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
+  // ---- détection de la connexion : signale vite, et relance la synchro au retour ----
+  useEffect(() => {
+    const onOnline = () => { setSyncState("syncing"); setNetTick((n) => n + 1); };
+    const onOffline = () => setSyncState("offline");
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", onOnline);
+      window.addEventListener("offline", onOffline);
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) setSyncState("offline");
+    const hb = setInterval(() => setNetTick((n) => n + 1), 6000); // reprise auto toutes les 6 s
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", onOnline);
+        window.removeEventListener("offline", onOffline);
+      }
+      clearInterval(hb);
+    };
+  }, []);
+
   // ---- synchro en ligne : ENVOI (local -> serveur), par élément ----
   useEffect(() => {
     if (!loaded) return;
@@ -2145,6 +2165,7 @@ export default function App() {
     const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
     const t = setTimeout(async () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) { setSyncState("offline"); return; }
       try {
         const snap = pushedRef.current;
         const now = new Date().toISOString();
@@ -2170,13 +2191,13 @@ export default function App() {
         if (rows.length === 0) return;
         setSyncState("syncing");
         const { error } = await supabase.from("records").upsert(rows, { onConflict: "shop_id,collection,id" });
-        if (error) { setSyncState("error"); return; }
+        if (error) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); return; }
         rows.forEach((r) => { snap[r.collection + ":" + r.id] = r.deleted ? "__del__" : JSON.stringify(r.data); });
         setSyncState("synced");
-      } catch (e) { setSyncState("offline"); }
-    }, 1200);
+      } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
+    }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
