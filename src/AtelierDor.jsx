@@ -81,11 +81,21 @@ const FORMULAS = {
   E: { name: "Essai", days: 7, admins: 1, users: 2, priceLabel: "Gratuit · 7 jours", trial: true,
        features: ["Toutes les fonctions débloquées", "7 jours pour tester", "1 admin · 2 utilisateurs"] },
   S: { name: "Standard", days: 30, admins: 1, users: 2, priceLabel: "5 000 F / mois",
-       features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Sauvegarde & export"] },
+       features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Sauvegarde automatique"] },
   P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "12 000 F / mois",
-       features: ["2 admins · 5 utilisateurs", "Rapports détaillés", "Tout le Standard inclus"] },
+       features: ["2 admins · 5 utilisateurs", "Rapports détaillés + Export Excel", "Tout le Standard inclus"] },
   R: { name: "Premium", days: 365, admins: 99, users: 99, priceLabel: "100 000 F / an",
        features: ["Admins & utilisateurs illimités", "1 an inclus", "Toutes les fonctions"] },
+};
+
+// Fonctions réservées : l'Essai (E) débloque tout, Standard (S) non, Pro (P) et Premium (R) oui.
+const FEATURE_PLANS = {
+  reports: ["E", "P", "R"],
+  excel: ["E", "P", "R"],
+};
+const planAllows = (plan, feature) => {
+  const allowed = FEATURE_PLANS[feature];
+  return !allowed || allowed.includes(plan);
 };
 const PAID_FORMULAS = ["S", "P", "R"];
 let LIVE_PRICES = null; // prix chargés depuis Supabase (sinon repli sur FORMULAS)
@@ -1921,6 +1931,7 @@ export default function App() {
   const [onlineReady, setOnlineReady] = useState(false); // boutique en ligne vérifiée et autorisée ?
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
+  const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
   const [license, setLicense] = useState(null);
   const [licReady, setLicReady] = useState(false);
@@ -2361,7 +2372,10 @@ export default function App() {
   const rowsClients = () => clients.map((c) => ({ Nom: c.name, Téléphone: c.phone || "", Note: c.note || "", "Fournisseur pro": c.pro ? "Oui" : "" }));
   const rowsDepenses = () => expenses.map((e) => ({ Date: dateFr(e.date), Libellé: e.label, Catégorie: e.cat, Motif: e.note || "", Paiement: e.pay, Par: e.by || "", Montant: e.amount }));
 
-  const exportAllXlsx = () => xlsxExport(`atelier-dor-${TODAY}.xlsx`, {
+  const canExcel = planAllows(license ? license.plan : "S", "excel");
+  const xlsxExportG = (filename, sheets) => { if (!canExcel) { setUpsell("Export Excel"); return; } xlsxExport(filename, sheets); };
+  const guardImport = (fn) => (file) => { if (!canExcel) { setUpsell("Import Excel"); return; } fn(file); };
+  const exportAllXlsx = () => xlsxExportG(`atelier-dor-${TODAY}.xlsx`, {
     "Ventes": rowsVentes(), "Achats": rowsAchats(),
     "Stock or": rowsGold(gold.filter((it) => goldCat(it) === "or")),
     "Stock bijoux": rowsGold(gold.filter((it) => goldCat(it) === "bijou")),
@@ -2481,7 +2495,7 @@ export default function App() {
         <div className="card-head">
           <h3>Historique des ventes <span className="count">{sales.length}</span></h3>
           <div className="head-btns">
-            <button className="btn btn-line" onClick={() => xlsxExport(`ventes-${TODAY}.xlsx`, { Ventes: rowsVentes() })}><Download size={15} /> Excel</button>
+            <button className="btn btn-line" onClick={() => xlsxExportG(`ventes-${TODAY}.xlsx`, { Ventes: rowsVentes() })}><Download size={15} /> Excel</button>
             <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>
           </div>
         </div>
@@ -2518,7 +2532,7 @@ export default function App() {
       <div className="card-head">
         <h3>Achats d'or (rachats clients) <span className="count">{purchases.length}</span></h3>
         <div className="head-btns">
-          <button className="btn btn-line" onClick={() => xlsxExport(`achats-${TODAY}.xlsx`, { Achats: rowsAchats() })}><Download size={15} /> Excel</button>
+          <button className="btn btn-line" onClick={() => xlsxExportG(`achats-${TODAY}.xlsx`, { Achats: rowsAchats() })}><Download size={15} /> Excel</button>
           <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>
         </div>
       </div>
@@ -2708,8 +2722,8 @@ export default function App() {
           <div className="card-head">
             <h3>{title} — {g(wt)} · {fcfa(val)}</h3>
             <div className="head-btns">
-              <button className="btn btn-line" onClick={() => xlsxExport(`stock-${title.toLowerCase().replace(/\s/g, "-")}-${TODAY}.xlsx`, { [title]: rowsGold(list) })}><Download size={15} /> Excel</button>
-              <XlsxImportBtn label="Importer" onFile={importGold} />
+              <button className="btn btn-line" onClick={() => xlsxExportG(`stock-${title.toLowerCase().replace(/\s/g, "-")}-${TODAY}.xlsx`, { [title]: rowsGold(list) })}><Download size={15} /> Excel</button>
+              <XlsxImportBtn label="Importer" onFile={guardImport(importGold)} />
               <button className="btn btn-gold" onClick={() => setModal({ type: "gold" })}><Plus size={16} /> Ajouter</button>
             </div>
           </div>
@@ -2754,8 +2768,8 @@ export default function App() {
           <div className="card-head">
             <h3>Divers — valeur {fcfa(m.stockDiversValue)}</h3>
             <div className="head-btns">
-              <button className="btn btn-line" onClick={() => xlsxExport(`stock-divers-${TODAY}.xlsx`, { Divers: rowsDivers() })}><Download size={15} /> Excel</button>
-              <XlsxImportBtn label="Importer" onFile={importDivers} />
+              <button className="btn btn-line" onClick={() => xlsxExportG(`stock-divers-${TODAY}.xlsx`, { Divers: rowsDivers() })}><Download size={15} /> Excel</button>
+              <XlsxImportBtn label="Importer" onFile={guardImport(importDivers)} />
               <button className="btn btn-gold" onClick={() => setModal({ type: "divers" })}><Plus size={16} /> Ajouter</button>
             </div>
           </div>
@@ -2789,8 +2803,8 @@ export default function App() {
       <div className="card-head">
         <h3>Clients <span className="count">{clients.length}</span></h3>
         <div className="head-btns">
-          <button className="btn btn-line" onClick={() => xlsxExport(`clients-${TODAY}.xlsx`, { Clients: rowsClients() })}><Download size={15} /> Excel</button>
-          <XlsxImportBtn label="Importer" onFile={importClients} />
+          <button className="btn btn-line" onClick={() => xlsxExportG(`clients-${TODAY}.xlsx`, { Clients: rowsClients() })}><Download size={15} /> Excel</button>
+          <XlsxImportBtn label="Importer" onFile={guardImport(importClients)} />
           <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>
         </div>
       </div>
@@ -3010,7 +3024,7 @@ export default function App() {
             <div className="card">
               <div className="card-head">
                 <h3>Récap mensuel des clôtures <span className="count">{months.length}</span></h3>
-                <button className="btn btn-line" onClick={() => xlsxExport(`recap-mensuel-${TODAY}.xlsx`, { "Récap mensuel": months.map((mo) => ({ Mois: monthLabel(mo.month), Clôtures: mo.n, "CA encaissé": mo.ca, Rachats: mo.rachats, Dépenses: mo.depenses, "Écart cumulé": mo.ecart })) })}><Download size={15} /> Excel</button>
+                <button className="btn btn-line" onClick={() => xlsxExportG(`recap-mensuel-${TODAY}.xlsx`, { "Récap mensuel": months.map((mo) => ({ Mois: monthLabel(mo.month), Clôtures: mo.n, "CA encaissé": mo.ca, Rachats: mo.rachats, Dépenses: mo.depenses, "Écart cumulé": mo.ecart })) })}><Download size={15} /> Excel</button>
               </div>
               <table className="table">
                 <thead><tr><th>Mois</th><th className="r">Clôtures</th><th className="r">CA encaissé</th><th className="r">Rachats</th><th className="r">Dépenses</th><th className="r">Écart cumulé</th></tr></thead>
@@ -3050,7 +3064,7 @@ export default function App() {
           <div className="card-head">
             <h3>Dépenses & charges <span className="count">{expenses.length}</span></h3>
             <div className="head-btns">
-              <button className="btn btn-line" onClick={() => xlsxExport(`depenses-${TODAY}.xlsx`, { Dépenses: rowsDepenses() })}><Download size={15} /> Excel</button>
+              <button className="btn btn-line" onClick={() => xlsxExportG(`depenses-${TODAY}.xlsx`, { Dépenses: rowsDepenses() })}><Download size={15} /> Excel</button>
               <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>
             </div>
           </div>
@@ -3087,6 +3101,16 @@ export default function App() {
   );
 
   const renderReports = () => {
+    if (!planAllows(license ? license.plan : "S", "reports")) {
+      return (
+        <div className="card locked-card">
+          <span className="pill pill-gold">Pro</span>
+          <h3 style={{ margin: "12px 0 6px" }}>Rapports détaillés — disponible en Pro</h3>
+          <p className="muted small" style={{ maxWidth: 460, margin: "0 auto 16px" }}>Les analyses et graphiques détaillés sont inclus dans les formules Pro et Premium. Passe à une formule supérieure pour les débloquer.</p>
+          <button className="btn btn-gold" onClick={() => go("abo")}>Voir les formules</button>
+        </div>
+      );
+    }
     const pSales = sales.filter((s) => inPeriod(s.date, reportPeriod));
     const pPurch = purchases.filter((p) => inPeriod(p.date, reportPeriod));
     const pExp = expenses.filter((e) => inPeriod(e.date, reportPeriod));
@@ -3147,7 +3171,7 @@ export default function App() {
         <div className="card">
           <div className="card-head">
             <h3>Ventes par type de produit <span className="count">{byType.length}</span></h3>
-            <button className="btn btn-line" onClick={() => xlsxExport(`ventes-par-type-${TODAY}.xlsx`, { "Par type": byType.map((t) => ({ Produit: t.type, Catégorie: KIND_LABEL[t.kind] || "Or", "Qté vendue": t.qty, "Chiffre d'affaires": t.revenue, Marge: t.marge })) })}><Download size={15} /> Excel</button>
+            <button className="btn btn-line" onClick={() => xlsxExportG(`ventes-par-type-${TODAY}.xlsx`, { "Par type": byType.map((t) => ({ Produit: t.type, Catégorie: KIND_LABEL[t.kind] || "Or", "Qté vendue": t.qty, "Chiffre d'affaires": t.revenue, Marge: t.marge })) })}><Download size={15} /> Excel</button>
           </div>
           {byType.length === 0 ? <p className="muted small">Aucune vente enregistrée pour l'instant.</p> : (
             <table className="table">
@@ -3426,6 +3450,12 @@ export default function App() {
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
+      {upsell && (
+        <Modal title={`${upsell} — disponible en Pro`} onClose={() => setUpsell(null)}
+          footer={<><button className="btn btn-line" onClick={() => setUpsell(null)}>Fermer</button><button className="btn btn-gold" onClick={() => { setUpsell(null); go("abo"); }}>Voir les formules</button></>}>
+          <p className="muted small" style={{ margin: 0 }}>Cette fonction est incluse dans les formules <strong>Pro</strong> et <strong>Premium</strong>. Passe à une formule supérieure pour l'utiliser.</p>
+        </Modal>
+      )}
       {clientView && renderClientHistory()}
       {productView && renderProductHistory()}
       {receipt && <ReceiptModal data={receipt} shop={shop} onClose={() => setReceipt(null)} />}
@@ -3706,6 +3736,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .logout-btn { width:100%; justify-content:center; margin-top:8px; background:rgba(255,255,255,.06); color:#e9e0d0; border:1px solid rgba(255,255,255,.12); }
 .logout-btn:hover { background:rgba(156,74,53,.25); border-color:rgba(156,74,53,.5); color:#fff; }
 .data-actions { display:flex; flex-wrap:wrap; gap:9px; margin-bottom:12px; }
+.locked-card { text-align:center; padding:34px 22px; }
 .btn.danger { color:var(--clay); border:1px solid #eccfae; background:none; }
 .btn.danger:hover { background:var(--clay-soft); }
 .backup-area { width:100%; min-height:150px; margin-top:6px; border:1px solid var(--line); border-radius:10px;
