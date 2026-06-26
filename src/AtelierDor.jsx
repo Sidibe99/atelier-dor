@@ -2172,6 +2172,7 @@ export default function App() {
   const [opsTab, setOpsTab] = useState("sales"); // tableau de bord : "sales" | "purchases"
   const [history, setHistory] = useState(null); // { type:"sale"|"purchase", item } pour l'historique au clic
   const [now, setNow] = useState(new Date());
+  const [tickerMode, setTickerMode] = useState("vente"); // barre des cours : "vente" | "achat"
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
   const [license, setLicense] = useState(null);
@@ -3870,10 +3871,13 @@ export default function App() {
 
           <div className="cours-ticker" onClick={() => go("cours")} title="Voir le cours en direct">
             <span className="ticker-live"><span className="dot live" /></span>
+            <button className={`ticker-toggle ${tickerMode}`} onClick={(e) => { e.stopPropagation(); setTickerMode((m) => m === "vente" ? "achat" : "vente"); }} title="Basculer prix de vente / prix d'achat">
+              <RefreshCw size={11} /> {tickerMode === "vente" ? "Vente" : "Achat"}
+            </button>
             {KARATS.map((k) => (
               <div className="assay" key={k}>
                 <span className="assay-k">{k}K</span>
-                <span className="assay-p num">{nf.format(Math.round(prices[k].vente))}</span>
+                <span className="assay-p num">{nf.format(Math.round(prices[k][tickerMode]))}</span>
               </div>
             ))}
           </div>
@@ -4034,6 +4038,11 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .assay-k { font-size:10px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
 .assay-p { font-size:12px; font-weight:600; }
 .assay-world { background:var(--gold-soft,#f3e7c9); border-color:rgba(184,134,47,.5); min-width:64px; }
+.ticker-toggle { display:inline-flex; align-items:center; gap:4px; border:0; cursor:pointer;
+  padding:5px 10px; border-radius:9px; font-size:11px; font-weight:700; letter-spacing:.02em; color:#fff; }
+.ticker-toggle.vente { background:var(--green); }
+.ticker-toggle.achat { background:var(--clay); }
+.ticker-toggle svg { opacity:.85; }
 .stat-sep { color:var(--muted); font-weight:400; margin:0 2px; }
 .assay-world .assay-k { color:var(--ink2,#3a2e1d); }
 .assay-world .assay-p { color:var(--gold); }
