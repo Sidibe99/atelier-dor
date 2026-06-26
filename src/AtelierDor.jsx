@@ -3051,7 +3051,7 @@ export default function App() {
             );
           })}
         </div>
-        <p className="src-note">En choisissant une formule, un message prérempli part vers ton revendeur (WhatsApp) avec le nom de ta boutique. Il t'enverra ensuite un code d'activation.</p>
+        <p className="src-note">En choisissant une formule, un message prérempli part vers ton revendeur (WhatsApp) avec le nom de ta boutique. Il met à jour ton abonnement directement — aucun code à saisir.</p>
       </>
     );
   };
