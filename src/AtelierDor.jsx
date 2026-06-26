@@ -684,7 +684,7 @@ function OnlineLogin({ onExit, logo, sub = "Espace en ligne", heading = "Connexi
   );
 }
 
-function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo }) {
+function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo, onAuthorized }) {
   const [profile, setProfile] = useState(null);
   const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -704,6 +704,15 @@ function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo }) {
     finally { setLoading(false); }
   }, [authUser.id]);
   useEffect(() => { load(); }, [load]);
+
+  // entrée automatique dans l'app quand la boutique est active (mode entrée principale)
+  useEffect(() => {
+    if (!onAuthorized) return;
+    if (loading || err || !profile || profile.is_reseller || !shop) return;
+    const e2 = shop.expiry ? String(shop.expiry).slice(0, 10) : "";
+    if (shop.status === "suspended" || (e2 && e2 < TODAY)) return;
+    onAuthorized(profile, shop);
+  }, [onAuthorized, loading, err, profile, shop]);
 
   const waReseller = () => {
     const p = String(resellerPhone || "").replace(/[^\d]/g, "");
@@ -756,6 +765,10 @@ function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo }) {
         </div>
       </div>
     );
+  }
+
+  if (onAuthorized) {
+    return (<div className="lock"><div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-sub">Ouverture…</div></div></div>);
   }
 
   return (
@@ -1599,6 +1612,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
   const [authReady, setAuthReady] = useState(false); // session en ligne restaurée ?
+  const [onlineReady, setOnlineReady] = useState(false); // boutique en ligne vérifiée et autorisée ?
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [route, setRoute] = useState(() => { const h = (typeof window !== "undefined" ? (window.location.hash || "") : "").replace(/^#/, ""); return h === "admin-create" ? "admin" : h === "espace" ? "espace" : h === "client" ? "client" : "app"; });
@@ -1754,6 +1768,9 @@ export default function App() {
     })();
     return () => { try { sub && sub.unsubscribe(); } catch (e) { /* */ } };
   }, []);
+
+  // si le compte en ligne change (connexion/déconnexion), re-vérifier la boutique
+  useEffect(() => { setOnlineReady(false); }, [authUser ? authUser.id : null]);
 
   // ---- prix des formules chargés depuis Supabase (modifiables par le revendeur) ----
   const loadPrices = useCallback(async () => {
@@ -1940,7 +1957,19 @@ export default function App() {
     if (window.confirm("Supprimer cet employé ?")) setUsers((arr) => arr.filter((x) => x.id !== id));
   };
   const login = (u) => { setCurrentUser(u); setView("dash"); try { STORE.set("atelierdor:session", u.id); } catch (e) { /* */ } };
-  const logout = () => { try { STORE.del("atelierdor:session"); } catch (e) { /* */ } setCurrentUser(null); setNavOpen(false); };
+  const logout = () => {
+    try { STORE.del("atelierdor:session"); } catch (e) { /* */ }
+    try { supabase.auth.signOut(); } catch (e) { /* */ }
+    setOnlineReady(false); setCurrentUser(null); setNavOpen(false);
+  };
+  // entrée en ligne : reconstitue licence + utilisateur à partir de la boutique Supabase
+  const enterOnline = useCallback((profile, shopRow) => {
+    const expS = shopRow.expiry ? String(shopRow.expiry).slice(0, 10) : "";
+    setLicense({ valid: true, plan: shopRow.plan || "S", lifetime: false, expiry: expS ? new Date(expS) : null, code: "online" });
+    const mail = authUser && authUser.email ? authUser.email : "";
+    setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur" });
+    setView("dash"); setOnlineReady(true);
+  }, [authUser]);
   const activate = (c) => {
     const v = verifyActivation(c);
     if (v.valid) { const norm = c.replace(/\s+/g, "").toUpperCase(); STORE.set("atelierdor:license", norm); setLicense({ ...v, code: norm }); }
@@ -3055,14 +3084,14 @@ export default function App() {
       </div>
     );
   }
-  if (!licReady) {
+  if (!authReady) {
     return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
   }
-  if (!license) {
-    return (<div className="app"><style>{CSS}</style><ActivationScreen onActivate={activate} onAdmin={goAdmin} onTrial={startTrial} onChoose={chooseFormula} onContact={contactReseller} trialUsed={trialUsed} logo={shop.logo} />{formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}</div>);
+  if (!authUser) {
+    return (<div className="app"><style>{CSS}</style><OnlineLogin logo={shop.logo} sub="Ta boutique" heading="Connexion à ta boutique" /></div>);
   }
-  if (!currentUser) {
-    return (<div className="app"><style>{CSS}</style><LockScreen users={users} onUnlock={login} logo={shop.logo} /></div>);
+  if (!onlineReady || !currentUser) {
+    return (<div className="app"><style>{CSS}</style><ClientGate authUser={authUser} onSignOut={authSignOut} resellerPhone={resellerPhone} logo={shop.logo} onAuthorized={enterOnline} /></div>);
   }
   const isPatron = currentUser.role === "patron";
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo"].includes(n.id));
