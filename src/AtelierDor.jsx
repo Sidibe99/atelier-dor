@@ -3870,6 +3870,10 @@ export default function App() {
 
           <div className="cours-ticker" onClick={() => go("cours")} title="Voir le cours en direct">
             <span className="ticker-live"><span className="dot live" /></span>
+            <div className="assay assay-world">
+              <span className="assay-k">Mondial/g</span>
+              <span className="assay-p num">{nf.format(Math.round(perGram24))}</span>
+            </div>
             {KARATS.map((k) => (
               <div className="assay" key={k}>
                 <span className="assay-k">{k}K</span>
@@ -4033,6 +4037,9 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
   border-radius:8px; padding:4px 9px; background:var(--card); min-width:58px; }
 .assay-k { font-size:10px; font-weight:700; color:var(--gold); letter-spacing:.04em; }
 .assay-p { font-size:12px; font-weight:600; }
+.assay-world { background:var(--gold-soft,#f3e7c9); border-color:rgba(184,134,47,.5); min-width:64px; }
+.assay-world .assay-k { color:var(--ink2,#3a2e1d); }
+.assay-world .assay-p { color:var(--gold); }
 .top-actions { display:flex; align-items:center; gap:9px; }
 .search { display:flex; align-items:center; gap:7px; background:var(--card); border:1px solid var(--line);
   border-radius:9px; padding:7px 11px; color:var(--muted); }
