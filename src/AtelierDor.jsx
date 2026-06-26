@@ -97,6 +97,14 @@ const planAllows = (plan, feature) => {
   const allowed = FEATURE_PLANS[feature];
   return !allowed || allowed.includes(plan);
 };
+
+// tri d'une collection synchronisée (plus récent en premier)
+const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", gold: "added", divers: "added" };
+const sortColl = (coll, arr) => {
+  const k = SORT_KEY[coll];
+  if (!k) return arr;
+  return [...arr].sort((a, b) => String((b && b[k]) || "").localeCompare(String((a && a[k]) || "")));
+};
 const PAID_FORMULAS = ["S", "P", "R"];
 let LIVE_PRICES = null; // prix chargés depuis Supabase (sinon repli sur FORMULAS)
 function priceLabelOf(plan) {
@@ -2186,7 +2194,7 @@ export default function App() {
     rows.forEach((r) => { (byColl[r.collection] = byColl[r.collection] || []).push(r); });
     Object.entries(SYNC_SETTERS).forEach(([coll, setter]) => {
       const live = (byColl[coll] || []).filter((r) => !r.deleted);
-      setter(live.map((r) => r.data));
+      setter(sortColl(coll, live.map((r) => r.data)));
       (byColl[coll] || []).forEach((r) => { snap[coll + ":" + r.id] = r.deleted ? "__del__" : JSON.stringify(r.data); });
     });
     const setR = (byColl["settings"] || []).find((r) => String(r.id) === "main" && !r.deleted);
@@ -2213,7 +2221,7 @@ export default function App() {
         snap[key] = js;
       }
     });
-    return changed ? Array.from(map.values()) : prev;
+    return changed ? sortColl(coll, Array.from(map.values())) : prev;
   };
 
   const applyRemote = (rows) => {
@@ -4041,12 +4049,17 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .sidebar { transform:translateX(-100%); transition:transform .25s; box-shadow:0 0 40px rgba(0,0,0,.3); }
   .sidebar.open { transform:translateX(0); }
   .scrim { display:block; position:fixed; inset:0; background:rgba(28,22,17,.4); z-index:35; }
-  .main { margin-left:0; }
+  .main { margin-left:0; min-width:0; overflow-x:hidden; }
   .menu-btn { display:grid; width:38px; height:38px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--ink); flex:none; }
-  .content { padding:16px; }
+  .content { padding:16px; max-width:100%; }
   .grid2 { grid-template-columns:1fr; }
   .manual { grid-template-columns:1fr; }
   .search { display:none; }
+  .topbar { flex-wrap:wrap; gap:10px; padding:12px 14px; }
+  .top-actions { margin-left:auto; }
+  .card { overflow-x:auto; }
+  .cours-ticker { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table { min-width:540px; }
 }
 @media (max-width:460px){ .kpis { grid-template-columns:1fr; } }
 /* ----- Espace revendeur ----- */
