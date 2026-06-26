@@ -877,6 +877,60 @@ function ShopFormModal({ mode, shop, onClose, onSubmit }) {
   );
 }
 
+function AccountModal({ shop, onClose, onSubmit }) {
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);
+  const genPwd = () => {
+    const a = "ABCDEFGHJKMNPQRSTUVWXYZ", n = "23456789";
+    let s = "";
+    for (let i = 0; i < 3; i++) s += a[Math.floor(Math.random() * a.length)];
+    for (let i = 0; i < 4; i++) s += n[Math.floor(Math.random() * n.length)];
+    setPwd(s); setErr("");
+  };
+  const submit = async () => {
+    if (!email.trim() || !pwd) { setErr("Remplis l'e-mail et le mot de passe."); return; }
+    if (pwd.length < 6) { setErr("Mot de passe : au moins 6 caractères."); return; }
+    setBusy(true); setErr("");
+    try { const res = await onSubmit({ email: email.trim().toLowerCase(), password: pwd }); setDone(res.account); setBusy(false); }
+    catch (e) { setErr(e && e.message ? e.message : "Opération impossible. Vérifie ta connexion."); setBusy(false); }
+  };
+  if (done) {
+    const waPhone = String(shop.phone || "").replace(/[^\d]/g, "");
+    const waMsg = `Bonjour, voici vos accès à l'application Atelier d'Or :\n\nLien : https://atelierdorpro.com\nE-mail : ${done.email}\nMot de passe : ${done.password}\n\nOuvrez le lien, entrez l'e-mail et le mot de passe pour vous connecter.`;
+    const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waMsg)}` : null;
+    return (
+      <Modal title="Compte client créé" sub={shop.name} onClose={onClose} footer={<button className="btn btn-gold" onClick={onClose}>Terminé</button>}>
+        <p className="muted small" style={{ margin: "0 0 12px" }}>Transmets ces identifiants à ton client. Note-les : le mot de passe ne sera plus affiché ensuite.</p>
+        <div className="creds-box">
+          <div className="creds-row"><span>E-mail</span><b>{done.email}</b></div>
+          <div className="creds-row"><span>Mot de passe</span><b>{done.password}</b></div>
+        </div>
+        <div className="data-actions" style={{ marginTop: 12 }}>
+          <button className="btn btn-line" onClick={() => { try { navigator.clipboard.writeText(`E-mail : ${done.email}\nMot de passe : ${done.password}`); } catch (e) { /* */ } }}>Copier</button>
+          {waUrl && <a className="btn btn-gold" href={waUrl} target="_blank" rel="noreferrer">Envoyer sur WhatsApp</a>}
+        </div>
+      </Modal>
+    );
+  }
+  return (
+    <Modal title="Compte client" sub={shop.name} onClose={onClose}
+      footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={submit} disabled={busy}>{busy ? "…" : "Créer le compte"}</button></>}>
+      <p className="muted small" style={{ margin: "0 0 12px" }}>Crée l'accès en ligne du client pour cette boutique.</p>
+      <Field label="E-mail du client"><input className="act-input" type="email" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="boutique@exemple.com" /></Field>
+      <Field label="Mot de passe">
+        <div className="pwd-row">
+          <input className="act-input" value={pwd} onChange={(e) => { setPwd(e.target.value); setErr(""); }} placeholder="6 caractères minimum" />
+          <button type="button" className="btn btn-line" onClick={genPwd}>Générer</button>
+        </div>
+      </Field>
+      {err && <p className="lock-err">{err}</p>}
+    </Modal>
+  );
+}
+
 function PricingModal({ onClose, onSaved }) {
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1068,6 +1122,15 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
     if (error) throw error;
     setModal(null); await load();
   };
+  const createAccountForShop = async (shop, { email, password }) => {
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke("create-client-account", {
+      body: { email, password, shop_id: shop.id, name: shop.name, role: "admin" },
+    });
+    const msg = fnErr ? "Compte non créé (connexion ?)."
+      : (fnData && fnData.error) ? accountErr(fnData.error) : null;
+    if (msg) throw new Error(msg);
+    return { account: { email, password } };
+  };
   const toggleStatus = async (shop) => {
     const next = shop.status === "suspended" ? "active" : "suspended";
     const verb = next === "suspended" ? "suspendre" : "réactiver";
@@ -1158,6 +1221,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
                 </div>
                 <div className="shop-actions">
                   {wa && <a className="btn btn-line" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  <button className="btn btn-line" onClick={() => setModal({ mode: "account", shop: s })}>Compte</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "payments", shop: s })}>Paiements</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "renew", shop: s })}><RefreshCw size={15} /> Renouveler</button>
                   <button className={`btn ${s.status === "suspended" ? "btn-gold" : "btn-line"}`} onClick={() => toggleStatus(s)}>{s.status === "suspended" ? "Réactiver" : "Suspendre"}</button>
@@ -1171,6 +1235,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       <button className="editor-link" onClick={onExit}>Retour à l'application</button>
 
       {modal && modal.mode === "create" && <ShopFormModal mode="create" onClose={() => setModal(null)} onSubmit={createShop} />}
+      {modal && modal.mode === "account" && <AccountModal shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => createAccountForShop(modal.shop, vals)} />}
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
       {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
