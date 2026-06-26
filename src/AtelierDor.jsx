@@ -1722,6 +1722,10 @@ function buildReceiptText(d, shop) {
   });
   L.push("--------------------------------");
   L.push("TOTAL : " + fcfa(d.total));
+  if (d.balance > 0) {
+    L.push("Paye : " + fcfa(d.paid));
+    L.push("RESTE DU : " + fcfa(d.balance));
+  }
   if (d.pay) L.push("Paiement : " + d.pay);
   if (d.note) L.push("Note : " + d.note);
   L.push("--------------------------------");
@@ -1763,6 +1767,54 @@ function ReceiptCard({ data, shop }) {
   );
 }
 
+function rcSep(color, W, P, dashed) {
+  return (ctx, y) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    if (dashed && ctx.setLineDash) ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(P, y + 10); ctx.lineTo(W - P, y + 10); ctx.stroke();
+    if (ctx.setLineDash) ctx.setLineDash([]);
+  };
+}
+function receiptImageBlob(data, shop) {
+  return new Promise((resolve) => {
+    const W = 680, P = 44, scale = 2;
+    const INK = "#1c1611", MUT = "#8a7d68", CLAY = "#9c4a35", LINE = "#e6ddcc";
+    const rows = [];
+    const push = (h, draw) => rows.push({ h, draw });
+    push(42, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 30px Georgia, serif"; ctx.textAlign = "center"; ctx.fillText(shop.name || "Atelier d'Or", W / 2, y + 30); });
+    if (shop.addr) push(24, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText(shop.addr, W / 2, y + 18); });
+    if (shop.phone) push(24, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText("Tél : " + shop.phone, W / 2, y + 18); });
+    push(24, rcSep(LINE, W, P));
+    push(34, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 19px Arial"; ctx.textAlign = "left"; ctx.fillText(data.kind === "sale" ? "REÇU DE VENTE" : "BORDEREAU D'ACHAT", P, y + 22); ctx.fillStyle = MUT; ctx.font = "15px Arial"; ctx.textAlign = "right"; ctx.fillText("N° " + data.no, W - P, y + 22); });
+    push(28, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "15px Arial"; ctx.textAlign = "left"; ctx.fillText(data.date + (data.time ? " · " + data.time : ""), P, y + 20); ctx.textAlign = "right"; ctx.fillText(data.client || "Client comptant", W - P, y + 20); });
+    push(24, rcSep(LINE, W, P));
+    data.lines.forEach((l) => {
+      push(28, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "17px Arial"; ctx.textAlign = "left"; ctx.fillText(l.desc, P, y + 20); ctx.font = "700 17px Arial"; ctx.textAlign = "right"; ctx.fillText(fcfa(l.amount), W - P, y + 20); });
+      if (l.detail) push(22, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "14px Arial"; ctx.textAlign = "left"; ctx.fillText(l.detail, P, y + 16); });
+    });
+    push(24, rcSep(LINE, W, P));
+    push(38, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 22px Arial"; ctx.textAlign = "left"; ctx.fillText("TOTAL", P, y + 24); ctx.textAlign = "right"; ctx.fillText(fcfa(data.total), W - P, y + 24); });
+    if (data.balance > 0) {
+      push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "left"; ctx.fillText("Payé", P, y + 18); ctx.textAlign = "right"; ctx.fillText(fcfa(data.paid), W - P, y + 18); });
+      push(30, (ctx, y) => { ctx.fillStyle = CLAY; ctx.font = "700 18px Arial"; ctx.textAlign = "left"; ctx.fillText("Reste dû", P, y + 20); ctx.textAlign = "right"; ctx.fillText(fcfa(data.balance), W - P, y + 20); });
+    }
+    if (data.pay) push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "left"; ctx.fillText("Paiement", P, y + 18); ctx.textAlign = "right"; ctx.fillText(data.pay, W - P, y + 18); });
+    if (data.note) push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "italic 15px Arial"; ctx.textAlign = "left"; ctx.fillText("Note : " + data.note, P, y + 18); });
+    push(28, rcSep(LINE, W, P, true));
+    push(28, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText("Merci de votre confiance", W / 2, y + 18); });
+
+    const totalH = rows.reduce((a, r) => a + r.h, 0) + P * 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = W * scale; canvas.height = totalH * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#fffdf8"; ctx.fillRect(0, 0, W, totalH);
+    let y = P;
+    rows.forEach((r) => { r.draw(ctx, y); y += r.h; });
+    canvas.toBlob((b) => resolve(b), "image/png");
+  });
+}
+
 function ReceiptModal({ data, shop, onClose }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -1772,13 +1824,30 @@ function ReceiptModal({ data, shop, onClose }) {
   const whatsapp = () => {
     try { window.open("https://wa.me/?text=" + encodeURIComponent(buildReceiptText(data, shop)), "_blank"); } catch (e) { /* bloqué : utiliser Copier */ }
   };
+  const [imgBusy, setImgBusy] = useState(false);
+  const sendImage = async () => {
+    setImgBusy(true);
+    try {
+      const blob = await receiptImageBlob(data, shop);
+      const file = new File([blob], `recu-${data.no}.png`, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "Reçu", text: `Reçu ${data.no}` }); } catch (e) { /* annulé */ }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = `recu-${data.no}.png`; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+    } catch (e) { /* */ }
+    setImgBusy(false);
+  };
   return (
     <Modal title="Reçu" sub={`N° ${data.no}`} onClose={onClose}
       footer={<div className="foot-actions" style={{ marginLeft: 0, width: "100%", flexWrap: "wrap" }}>
         <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
-        <button className="btn btn-line" onClick={whatsapp}>WhatsApp</button>
+        <button className="btn btn-line" onClick={whatsapp}>WhatsApp (texte)</button>
+        <button className="btn btn-gold" onClick={sendImage} disabled={imgBusy}>{imgBusy ? "…" : "Envoyer en image"}</button>
         <button className="btn btn-line" onClick={copy}>{copied ? "Copié ✓" : "Copier"}</button>
-        <button className="btn btn-gold" onClick={() => window.print()}>Imprimer</button>
+        <button className="btn btn-line" onClick={() => window.print()}>Imprimer</button>
       </div>}>
       <ReceiptCard data={data} shop={shop} />
     </Modal>
