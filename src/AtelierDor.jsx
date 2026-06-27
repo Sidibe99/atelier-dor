@@ -3468,12 +3468,12 @@ export default function App() {
   const renderCaisse = () => {
     const todaySales = sales.filter((s) => s.date === TODAY);
     const todayPays = payments.filter((p) => p.date === TODAY);
-    const byPay = (m2) => todayPays.filter((p) => p.pay === m2).reduce((a, b) => a + b.amount, 0);
+    const byPay = (m2) => Math.round(todayPays.filter((p) => p.pay === m2).reduce((a, b) => a + b.amount, 0));
     const esp = byPay("Espèces"), wave = byPay("Wave"), om = byPay("Orange Money"), vir = byPay("Banque");
-    const encTotal = todayPays.reduce((a, b) => a + b.amount, 0);
-    const caTotal = todaySales.reduce((a, b) => a + b.total, 0);
-    const rachats = purchasePayments.filter((p) => p.date === TODAY && p.pay === "Espèces").reduce((a, b) => a + b.amount, 0);
-    const depenses = expenses.filter((e) => e.date === TODAY && e.pay === "Espèces").reduce((a, b) => a + b.amount, 0);
+    const encTotal = Math.round(todayPays.reduce((a, b) => a + b.amount, 0));
+    const caTotal = Math.round(todaySales.reduce((a, b) => a + b.total, 0));
+    const rachats = Math.round(purchasePayments.filter((p) => p.date === TODAY && p.pay === "Espèces").reduce((a, b) => a + b.amount, 0));
+    const depenses = Math.round(expenses.filter((e) => e.date === TODAY && e.pay === "Espèces").reduce((a, b) => a + b.amount, 0));
     const theorique = fondCaisse + esp - rachats - depenses;
     const compte = parseFloat(compteCaisse) || 0;
     const compted = compteCaisse !== "";
