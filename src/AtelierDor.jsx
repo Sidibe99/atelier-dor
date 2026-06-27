@@ -3886,7 +3886,7 @@ export default function App() {
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="brand">
-          <BrandMark logo={shop.logo} />
+          <BrandMark />
           <div><div className="brand-name">{shop.name || "Atelier d'Or"}</div><div className="brand-sub">{currentUser.name} · {isPatron ? "Patron" : "Vendeur"}</div></div>
         </div>
         <nav>
