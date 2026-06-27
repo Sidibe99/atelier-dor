@@ -963,7 +963,7 @@ function ChatMedia({ media, kind, onImage }) {
   return null;
 }
 
-function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice, limits, shopId, onUpsell }) {
+function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, onDelete, unread, onNotice, limits, shopId, onUpsell }) {
   const lim = limits || { img: 1.5, audioSec: 30, file: 2, storage: false };
   const useStorage = !!(lim.storage && shopId);
   const [text, setText] = useState("");
@@ -1069,6 +1069,17 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice, 
               ? <p className="muted small chat-empty">Aucun message pour l'instant.<br />Écris, ou envoie une photo, un vocal ou un document.</p>
               : sorted.map((m) => {
                 const mine = m.userId === myId;
+                if (m.removed) {
+                  return (
+                    <div key={m.id} className={`chat-msg ${mine ? "mine" : ""}`}>
+                      {!mine && <span className="chat-name">{m.by}</span>}
+                      <div className="chat-bubble removed"><span className="chat-removed">🚫 Message supprimé</span></div>
+                      <span className="chat-foot"><span className="chat-time">{m.time}</span></span>
+                    </div>
+                  );
+                }
+                const readers = mine ? (reads || []).filter((r) => r.userId !== myId && (r.ts || 0) >= (m.ts || 0)) : [];
+                const readNames = readers.map((r) => r.name).filter(Boolean);
                 return (
                   <div key={m.id} className={`chat-msg ${mine ? "mine" : ""}`}>
                     {!mine && <span className="chat-name">{m.by}{m.role === "patron" ? " · patron" : ""}</span>}
@@ -1078,7 +1089,13 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice, 
                       {m.file && <ChatMedia media={m.file} kind="file" />}
                       {m.text && <span className="chat-txt">{m.text}</span>}
                     </div>
-                    <span className="chat-time">{m.time}</span>
+                    <span className="chat-foot">
+                      <span className="chat-time">{m.time}</span>
+                      {mine && (readers.length > 0
+                        ? <span className="chat-read seen">✓✓ Lu{readNames.length <= 2 ? " · " + readNames.join(", ") : " · " + readNames.length}</span>
+                        : <span className="chat-read">✓ Envoyé</span>)}
+                      {(mine || isPatron) && onDelete && <button className="chat-del" onClick={() => onDelete(m)} title="Supprimer ce message" aria-label="Supprimer">Supprimer</button>}
+                    </span>
                   </div>
                 );
               })}
@@ -2610,6 +2627,7 @@ export default function App() {
   const [expenses, setExpenses] = useState(seedExpenses);
   const [journal, setJournal] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [reads, setReads] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSeen, setChatSeen] = useState(0);
   const [users, setUsers] = useState(seedUsers);
@@ -2748,6 +2766,7 @@ export default function App() {
           if (d.expenses) setExpenses(d.expenses);
           if (d.journal) setJournal(d.journal);
           if (d.messages) setMessages(d.messages);
+          if (d.reads) setReads(d.reads);
           if (d.users && d.users.length) setUsers(d.users);
           if (d.settings) {
             setPrime(d.settings.prime ?? 3);
@@ -2837,13 +2856,13 @@ export default function App() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await STORE.set("atelierdor:data", JSON.stringify({
-        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, users,
+        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, reads, users,
         settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
       }));
       setSaveState(ok ? "saved" : "error");
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, reads, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   // ---- détection de la connexion : signale vite, et relance la synchro au retour ----
   useEffect(() => {
@@ -2880,7 +2899,7 @@ export default function App() {
     if (typeof d.resellerPhone === "string") setResellerPhone(d.resellerPhone);
   };
 
-  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal, messages: setMessages };
+  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal, messages: setMessages, reads: setReads };
 
   // remplace tout le local par la version serveur (adoption d'une boutique sur un nouvel appareil)
   const hydrateFromServer = (rows) => {
@@ -3002,7 +3021,7 @@ export default function App() {
     if (!currentUser || !currentUser.shopId) return;
     if (!dataReady) return;
     const shopId = currentUser.shopId;
-    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages };
+    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, reads };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
     const t = setTimeout(async () => {
       if (typeof navigator !== "undefined" && navigator.onLine === false) { setSyncState("offline"); return; }
@@ -3037,7 +3056,7 @@ export default function App() {
       } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, reads, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = () => ask({ title: "Tout réinitialiser ?", message: "Toutes les données seront effacées et remplacées par les exemples. Cette action est définitive.", danger: true, okLabel: "Réinitialiser", onOk: async () => {
     await STORE.del("atelierdor:data");
@@ -3069,7 +3088,7 @@ export default function App() {
     if (!currentUser || !messages.length) return;
     const maxTs = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0);
     if (!notifInit.current) { notifInit.current = true; notifTsRef.current = maxTs; return; }
-    const incoming = messages.filter((m) => m.userId !== currentUser.id && (m.ts || 0) > notifTsRef.current);
+    const incoming = messages.filter((m) => m.userId !== currentUser.id && (m.ts || 0) > notifTsRef.current && !m.removed);
     notifTsRef.current = maxTs;
     if (!incoming.length) return;
     const last = [...incoming].sort((a, b) => (a.ts || 0) - (b.ts || 0)).pop();
@@ -3163,7 +3182,20 @@ export default function App() {
     if (p.file) msg.file = p.file;
     setMessages((arr) => [...arr, msg].slice(-500));
   };
-  const markChatSeen = () => { const last = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0); setChatSeen(last); try { STORE.set("atelierdor:chatseen", String(last)); } catch (e) { /* */ } };
+  const deleteMessage = (m) => {
+    if (!m) return;
+    ask({
+      title: "Supprimer ce message ?", message: "Ce message sera retiré pour toute l'équipe. Cette action est irréversible.",
+      danger: true, okLabel: "Supprimer",
+      onOk: () => {
+        const paths = [];
+        [m.image, m.audio, m.file].forEach((md) => { if (md && typeof md === "object" && md.path) paths.push(md.path); });
+        if (paths.length) { try { supabase.storage.from("chat").remove(paths); } catch (e) { /* */ } }
+        setMessages((arr) => arr.map((x) => x.id === m.id ? { id: x.id, userId: x.userId, by: x.by, role: x.role, date: x.date, time: x.time, ts: x.ts, removed: true } : x));
+      },
+    });
+  };
+  const markChatSeen = () => { const last = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0); setChatSeen(last); try { STORE.set("atelierdor:chatseen", String(last)); } catch (e) { /* */ } if (currentUser) setReads((arr) => { const others = arr.filter((r) => r.id !== currentUser.id); return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: last }]; }); };
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
   const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
@@ -4518,7 +4550,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const chatUnread = messages.filter((m) => (m.ts || 0) > chatSeen && m.userId !== currentUser.id).length;
+  const chatUnread = messages.filter((m) => (m.ts || 0) > chatSeen && m.userId !== currentUser.id && !m.removed).length;
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
   const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
 
@@ -4667,7 +4699,7 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
-      <ChatWidget messages={messages} myId={currentUser.id} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} unread={chatUnread} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
+      <ChatWidget messages={messages} reads={reads} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
     </div>
   );
 }
@@ -5213,6 +5245,15 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chat-icon:hover { border-color:var(--gold); background:var(--gold-soft); }
 .chat-icon:disabled { opacity:.4; cursor:default; }
 .chat-loading { font-size:.8rem; color:var(--muted); font-style:italic; }
+.chat-foot { display:flex; align-items:center; gap:8px; margin-top:2px; }
+.chat-msg.mine .chat-foot { flex-direction:row-reverse; }
+.chat-del { background:none; border:none; padding:0; font-size:.68rem; color:var(--muted); cursor:pointer; opacity:0; transition:.12s; text-decoration:underline; }
+.chat-msg:hover .chat-del { opacity:.7; }
+.chat-del:hover { opacity:1; color:var(--clay); }
+.chat-read { font-size:.66rem; color:var(--muted); white-space:nowrap; }
+.chat-read.seen { color:var(--gold); font-weight:600; }
+.chat-bubble.removed { background:transparent !important; border:1px dashed var(--line); }
+.chat-removed { font-style:italic; color:var(--muted); font-size:.82rem; }
 .chat-img { max-width:200px; max-height:220px; border-radius:10px; display:block; cursor:pointer; margin-bottom:2px; }
 .chat-audio { width:210px; max-width:100%; height:38px; }
 .chat-file { display:inline-flex; align-items:center; gap:6px; font-weight:600; color:var(--gold); text-decoration:none; word-break:break-all; }
