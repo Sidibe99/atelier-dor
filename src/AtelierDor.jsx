@@ -3774,7 +3774,7 @@ export default function App() {
       <div className="card">
         <div className="card-head">
           <h3><Download size={15} /> Données & sauvegarde</h3>
-          <span className="muted">{saveState === "saving" ? "Enregistrement…" : saveState === "error" ? "Indisponible" : "À jour"}</span>
+          <span className="muted">{saveState === "error" ? "Indisponible" : "À jour"}</span>
         </div>
         <p className="muted small" style={{ margin: "0 0 14px" }}>
           Tout est enregistré automatiquement sur cet appareil. La sauvegarde te permet d'en garder une copie de secours et de transférer ta boutique sur un autre téléphone.
@@ -3788,7 +3788,6 @@ export default function App() {
               <button className="btn btn-line danger" onClick={resetData}><Trash2 size={15} /> Réinitialiser</button>
             </div>
             <p className="note-box">Exporter crée un fichier (ou un texte à copier) contenant toute ta boutique. Importer le restaure — sur ce téléphone ou un autre. « Excel (tout) » crée un classeur avec une feuille par catégorie (ventes, achats, stock, clients, dépenses). Réinitialiser revient aux données d'exemple.</p>
-            {license && <p className="muted small" style={{ margin: "10px 0 0" }}>Licence : {license.lifetime ? "à vie" : `valable jusqu'au ${dateFull(license.expiry)}`}</p>}
           </>
         ) : (
           <p className="muted small" style={{ margin: 0 }}>Seul le patron peut exporter, importer ou réinitialiser les données.</p>
