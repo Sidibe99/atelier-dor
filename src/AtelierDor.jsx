@@ -337,6 +337,12 @@ const ConfirmModal = ({ title, message, okLabel, danger, onCancel, onOk }) => (
     <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>{message}</p>
   </Modal>
 );
+const NoticeModal = ({ title, message, onClose }) => (
+  <Modal title={title || "Information"} onClose={onClose}
+    footer={<button className="btn btn-gold" onClick={onClose}>OK</button>}>
+    <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>{message}</p>
+  </Modal>
+);
 function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle, init }) {
   const i = init || {};
   const [kind, setKind] = useState(i.kind || "or");
@@ -777,6 +783,30 @@ function ExpenseModal({ item, onClose, onSave }) {
         </Field>
       </div>
       <Field label="Détail / motif (optionnel)"><input className="input" value={f.note} onChange={(e) => set("note", e.target.value)} placeholder="ex : avance sur salaire de juin, fournisseur X…" /></Field>
+    </Modal>
+  );
+}
+
+function SalaryModal({ users, onClose, onSave }) {
+  const names = (users || []).map((u) => u.name).filter(Boolean);
+  const [name, setName] = useState(names[0] || "");
+  const [amount, setAmount] = useState("");
+  const [pay, setPay] = useState("Espèces");
+  const [month, setMonth] = useState("");
+  const valid = name && amount;
+  return (
+    <Modal title="Verser un salaire" sub="Enregistré comme dépense (catégorie Salaire)" onClose={onClose}
+      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ name, amount: parseFloat(amount) || 0, pay, month: month.trim() })}>Enregistrer le versement</button></div>}>
+      <Field label="Employé">
+        {names.length === 0
+          ? <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de l'employé" />
+          : <select className="input" value={name} onChange={(e) => setName(e.target.value)}>{names.map((n) => <option key={n}>{n}</option>)}</select>}
+      </Field>
+      <div className="grid2">
+        <Field label="Montant"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></Field>
+        <Field label="Paiement"><select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select></Field>
+      </div>
+      <Field label="Mois concerné (optionnel)"><input className="input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="ex : Juin 2026" /></Field>
     </Modal>
   );
 }
@@ -1462,6 +1492,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [allowed, setAllowed] = useState(null); // null = en cours, true, false
   const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
   const [confirmShop, setConfirmShop] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
@@ -1522,7 +1553,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   };
   const doToggleStatus = async (shop, next) => {
     const { error } = await supabase.from("shops").update({ status: next }).eq("id", shop.id);
-    if (error) { window.alert("Action impossible. Vérifie ta connexion."); return; }
+    if (error) { setNotice("Action impossible. Vérifie ta connexion."); return; }
     await load();
   };
   const toggleStatus = (shop) => {
@@ -1664,6 +1695,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
       {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
       {confirmShop && <ConfirmModal title={confirmShop.next === "suspended" ? "Suspendre cette boutique ?" : "Réactiver cette boutique ?"} message={confirmShop.next === "suspended" ? `« ${confirmShop.shop.name} » : l'accès sera bloqué jusqu'à réactivation.` : `« ${confirmShop.shop.name} » : l'accès sera rétabli.`} okLabel={confirmShop.next === "suspended" ? "Suspendre" : "Réactiver"} danger={confirmShop.next === "suspended"} onCancel={() => setConfirmShop(null)} onOk={() => { const c = confirmShop; setConfirmShop(null); doToggleStatus(c.shop, c.next); }} />}
+      {notice && <NoticeModal message={notice} onClose={() => setNotice(null)} />}
     </div>
   );
 }
@@ -1680,13 +1712,14 @@ function BackupModal({ mode, json, onClose, onImport }) {
       const a = document.createElement("a");
       a.href = url; a.download = `atelierdor-sauvegarde-${TODAY}.json`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (e) { window.alert("Le téléchargement est bloqué ici — utilise plutôt « Copier »."); }
+    } catch (e) { setNotice("Le téléchargement est bloqué ici — utilise plutôt « Copier »."); }
   };
   const pickFile = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setText(String(r.result)); r.readAsText(f); };
   const [confirming, setConfirming] = useState(null);
+  const [notice, setNotice] = useState(null);
   const doImport = () => {
-    let d; try { d = JSON.parse(text); } catch (e) { window.alert("Texte illisible : ce n'est pas un JSON valide."); return; }
-    if (!d || (!d.sales && !d.gold)) { window.alert("Ce fichier n'est pas une sauvegarde Atelier d'Or."); return; }
+    let d; try { d = JSON.parse(text); } catch (e) { setNotice("Texte illisible : ce n'est pas un JSON valide."); return; }
+    if (!d || (!d.sales && !d.gold)) { setNotice("Ce fichier n'est pas une sauvegarde Atelier d'Or."); return; }
     setConfirming(d);
   };
   return (
@@ -1702,6 +1735,7 @@ function BackupModal({ mode, json, onClose, onImport }) {
       <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={pickFile} />
     </Modal>
     {confirming && <ConfirmModal title="Importer cette sauvegarde ?" message="Elle remplacera toutes les données actuelles de cette boutique." okLabel="Importer" danger onCancel={() => setConfirming(null)} onOk={() => { const d = confirming; setConfirming(null); onImport(d); }} />}
+    {notice && <NoticeModal message={notice} onClose={() => setNotice(null)} />}
     </>
   );
 }
@@ -2304,6 +2338,8 @@ export default function App() {
   const [returnFor, setReturnFor] = useState(null);
   const [confirm, setConfirm] = useState(null); // { title, message, okLabel, danger, onOk }
   const ask = (opts) => setConfirm(opts);
+  const [notice, setNotice] = useState(null); // { title, message }
+  const notify = (message, title) => setNotice({ message, title });
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -2807,13 +2843,18 @@ export default function App() {
   const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); log("stock", it.id ? "Article divers modifié" : "Article divers ajouté", `${it.name}${it.qty != null ? " · qté " + it.qty : ""}`); setModal(null); };
   const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); log("client", it.id ? "Client modifié" : "Client ajouté", it.name || ""); setModal(null); };
   const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); log("depense", it.id ? "Dépense modifiée" : "Dépense ajoutée", `${it.label || ""} · ${fcfa(it.amount || 0)}`); setModal(null); };
+  const paySalary = ({ name, amount, pay, month }) => {
+    setExpenses((arr) => [{ id: uid(), date: TODAY, by: me(), label: `Salaire — ${name}${month ? " · " + month : ""}`, cat: "Salaire", pay, amount, note: "" }, ...arr]);
+    log("depense", "Salaire versé", `${name} · ${fcfa(amount)}`);
+    setModal(null);
+  };
   const saveUser = (it) => {
     const f = license ? FORMULAS[license.plan] : null;
     if (f && !it.id) {
       const admins = users.filter((u) => u.role === "patron").length;
       const vend = users.filter((u) => u.role === "vendeur").length;
-      if (it.role === "patron" && admins >= f.admins) { window.alert(`La formule ${f.name} autorise ${f.admins} admin(s). Choisis une formule supérieure pour en ajouter.`); return; }
-      if (it.role === "vendeur" && vend >= f.users) { window.alert(`La formule ${f.name} autorise ${f.users} utilisateur(s). Choisis une formule supérieure pour en ajouter.`); return; }
+      if (it.role === "patron" && admins >= f.admins) { notify(`La formule ${f.name} autorise ${f.admins} admin(s). Choisis une formule supérieure pour en ajouter.`, "Limite atteinte"); return; }
+      if (it.role === "vendeur" && vend >= f.users) { notify(`La formule ${f.name} autorise ${f.users} utilisateur(s). Choisis une formule supérieure pour en ajouter.`, "Limite atteinte"); return; }
     }
     setUsers((arr) => {
       if (it.id) {
@@ -2832,7 +2873,7 @@ export default function App() {
     setModal(null);
   };
   const delUser = (id) => {
-    if (users.length <= 1) { window.alert("Il faut garder au moins un utilisateur."); return; }
+    if (users.length <= 1) { notify("Il faut garder au moins un utilisateur.", "Action impossible"); return; }
     const u = users.find((x) => x.id === id);
     ask({ title: "Supprimer cet employé ?", message: u ? `« ${u.name} » ne pourra plus se connecter.` : "Cet employé ne pourra plus se connecter.", danger: true, okLabel: "Supprimer", onOk: () => { setUsers((arr) => arr.filter((x) => x.id !== id)); log("user", "Utilisateur supprimé", u ? u.name : ""); } });
   };
@@ -2906,7 +2947,7 @@ export default function App() {
       if (d.settings.fondCaisse != null) setFondCaisse(d.settings.fondCaisse);
     }
     setBackup(null);
-    window.alert("Sauvegarde importée. Toutes les données ont été restaurées.");
+    notify("Toutes les données ont été restaurées.", "Sauvegarde importée");
   };
   const del = (setter, id, kind, label) => ask({ title: "Supprimer cet élément ?", message: label ? `« ${label} » sera définitivement retiré.` : "Cet élément sera définitivement retiré. Cette action est irréversible.", danger: true, okLabel: "Supprimer", onOk: () => { setter((arr) => arr.filter((x) => x.id !== id)); if (kind) log(kind, "Suppression", label || ""); } });
 
@@ -2956,8 +2997,8 @@ export default function App() {
       qty: parseInt(numOf(pick(r, ["Qté", "Quantité", "Quantite", "Qty"]))) || 1,
       cat: String(pick(r, ["Catégorie", "Categorie", "Cat"])).toLowerCase().startsWith("or") ? "or" : "bijou",
     })).filter((x) => x.weight > 0);
-    if (!add.length) { window.alert("Aucune ligne valide (colonnes attendues : Type, Description, Carat, Poids (g), Qté, Catégorie)."); return; }
-    setGold((arr) => [...add, ...arr]); window.alert(`${add.length} article(s) or importé(s).`);
+    if (!add.length) { notify("Aucune ligne valide (colonnes attendues : Type, Description, Carat, Poids (g), Qté, Catégorie).", "Import"); return; }
+    setGold((arr) => [...add, ...arr]); notify(`${add.length} article(s) or importé(s).`, "Import réussi");
   });
   const importDivers = (file) => xlsxRead(file, (rows) => {
     const add = rows.map((r) => ({
@@ -2968,14 +3009,14 @@ export default function App() {
       cost: numOf(pick(r, ["Coût", "Cout", "Cost"])), price: numOf(pick(r, ["Vente", "Prix", "Price"])),
       min: parseInt(numOf(pick(r, ["Seuil min", "Min"]))) || 0,
     })).filter((x) => x.name);
-    if (!add.length) { window.alert("Aucune ligne valide (colonnes attendues : Désignation, Catégorie, Qté, Unité, Coût, Vente, Seuil min)."); return; }
-    setDivers((arr) => [...add, ...arr]); window.alert(`${add.length} article(s) divers importé(s).`);
+    if (!add.length) { notify("Aucune ligne valide (colonnes attendues : Désignation, Catégorie, Qté, Unité, Coût, Vente, Seuil min).", "Import"); return; }
+    setDivers((arr) => [...add, ...arr]); notify(`${add.length} article(s) divers importé(s).`, "Import réussi");
   });
   const importClients = (file) => xlsxRead(file, (rows) => {
     const add = rows.map((r) => ({ id: uid(), name: pick(r, ["Nom", "Name", "Client"]), phone: String(pick(r, ["Téléphone", "Telephone", "Phone", "Tel"])), note: pick(r, ["Note", "Remarque"]), pro: /oui|yes|1|x/i.test(String(pick(r, ["Fournisseur pro", "Pro"]))) }))
       .filter((c) => c.name && !clients.find((x) => x.name === c.name));
-    if (!add.length) { window.alert("Aucun nouveau client (colonnes attendues : Nom, Téléphone, Note)."); return; }
-    setClients((arr) => [...arr, ...add]); window.alert(`${add.length} client(s) importé(s).`);
+    if (!add.length) { notify("Aucun nouveau client (colonnes attendues : Nom, Téléphone, Note).", "Import"); return; }
+    setClients((arr) => [...arr, ...add]); notify(`${add.length} client(s) importé(s).`, "Import réussi");
   });
 
 
@@ -3679,6 +3720,7 @@ export default function App() {
             <h3>Dépenses & charges <span className="count">{expenses.length}</span></h3>
             <div className="head-btns">
               <button className="btn btn-line" onClick={() => xlsxExportG(`depenses-${TODAY}.xlsx`, { Dépenses: rowsDepenses() })}><Download size={15} /> Excel</button>
+              <button className="btn btn-line" onClick={() => setModal({ type: "salary" })}><Users size={16} /> Verser un salaire</button>
               <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>
             </div>
           </div>
@@ -4159,6 +4201,7 @@ export default function App() {
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
+      {modal?.type === "salary" && <SalaryModal users={users} onClose={() => setModal(null)} onSave={paySalary} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
       {upsell && (
@@ -4180,6 +4223,7 @@ export default function App() {
           onCancel={() => setConfirm(null)}
           onOk={() => { const f = confirm.onOk; setConfirm(null); if (f) f(); }} />
       )}
+      {notice && <NoticeModal title={notice.title} message={notice.message} onClose={() => setNotice(null)} />}
       {history && (() => {
         const it = history.item;
         const isSale = history.type === "sale";
