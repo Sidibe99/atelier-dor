@@ -2948,7 +2948,18 @@ export default function App() {
   });
 
 
-  const renderDash = () => (
+  const renderDash = () => {
+    const daysSince = (d) => Math.floor((Date.now() - new Date(d + "T00:00:00").getTime()) / 86400000);
+    const lowStock = divers.filter((d) => (d.qty || 0) <= 2);
+    const lateCredits = sales.filter((s) => !s.returned && balanceFor(s) > 0 && daysSince(s.date) >= 30);
+    const lateTotal = lateCredits.reduce((a, s) => a + balanceFor(s), 0);
+    const lastClosure = [...closures].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const caisseAlert = lastClosure && Math.abs(lastClosure.ecart || 0) >= 1000 ? lastClosure : null;
+    const alerts = [];
+    if (lowStock.length) alerts.push({ key: "stock", icon: Package, tone: "clay", text: `${lowStock.length} article${lowStock.length > 1 ? "s" : ""} en stock bas`, sub: lowStock.slice(0, 3).map((d) => `${d.name} (${d.qty || 0})`).join(" · "), act: () => { go("stock"); setStockTab("divers"); } });
+    if (lateCredits.length) alerts.push({ key: "credits", icon: Receipt, tone: "clay", text: `${lateCredits.length} créance${lateCredits.length > 1 ? "s" : ""} en retard (+30 jours)`, sub: `${fcfa(lateTotal)} à recouvrer`, act: () => go("credits") });
+    if (isPatron && caisseAlert) alerts.push({ key: "caisse", icon: Wallet, tone: caisseAlert.ecart < 0 ? "clay" : "gold", text: caisseAlert.ecart < 0 ? `Manquant à la dernière clôture : ${fcfa(Math.abs(caisseAlert.ecart))}` : `Excédent à la dernière clôture : ${fcfa(caisseAlert.ecart)}`, sub: `Clôture du ${dateFr(caisseAlert.date)}`, act: () => go("caisse") });
+    return (
     <>
       {license && license.plan === "E" && (
         <button className="trial-banner" onClick={() => go("abo")}>
@@ -2956,6 +2967,17 @@ export default function App() {
           <span>Essai gratuit — {planDaysLeft()} jour{planDaysLeft() > 1 ? "s" : ""} restant{planDaysLeft() > 1 ? "s" : ""}. Voir les formules et passer à un abonnement</span>
           <span className="trial-banner-arr">→</span>
         </button>
+      )}
+      {alerts.length > 0 && (
+        <div className="alerts">
+          {alerts.map((a) => (
+            <button key={a.key} className={`alert-row alert-${a.tone}`} onClick={a.act}>
+              <a.icon size={18} />
+              <div className="alert-main"><div className="alert-text">{a.text}</div>{a.sub && <div className="alert-sub">{a.sub}</div>}</div>
+              <span className="alert-arr">→</span>
+            </button>
+          ))}
+        </div>
       )}
       <div className="kpis">
         <Kpi icon={Coins} label="Valeur du stock or" value={fcfa(m.stockOrValue)} sub={`${g(m.stockOrWeight)} · au cours du jour`} tone="gold" />
@@ -3036,6 +3058,7 @@ export default function App() {
       </div>
     </>
   );
+  };
 
   const renderSales = () => {
     const list = sortColl("sales", sales.filter((s) => (s.label + s.client).toLowerCase().includes(q.toLowerCase())));
@@ -4615,6 +4638,17 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .shop-flag { border-left:4px solid var(--gold); }
 .rep-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
 .rep-toolbar .seg { margin-bottom:0; }
+.alerts { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+.alert-row { display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--card); cursor:pointer; transition:transform .15s, box-shadow .15s; }
+.alert-row:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.06); }
+.alert-clay { border-left:4px solid var(--clay); }
+.alert-gold { border-left:4px solid var(--gold); }
+.alert-clay > svg { color:var(--clay); flex-shrink:0; }
+.alert-gold > svg { color:var(--gold); flex-shrink:0; }
+.alert-main { flex:1; min-width:0; }
+.alert-text { font-weight:600; color:var(--ink); font-size:.95rem; }
+.alert-sub { font-size:.8rem; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.alert-arr { color:var(--muted); font-weight:700; flex-shrink:0; }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
