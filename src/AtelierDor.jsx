@@ -82,7 +82,7 @@ const FORMULAS = {
        features: ["Toutes les fonctions débloquées", "7 jours pour tester", "1 admin · 2 utilisateurs"] },
   S: { name: "Standard", days: 30, admins: 1, users: 2, priceLabel: "5 000 F / mois",
        features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Sauvegarde automatique"] },
-  P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "12 000 F / mois",
+  P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "10 000 F / mois",
        features: ["2 admins · 5 utilisateurs", "Rapports détaillés + Export Excel", "Tout le Standard inclus"] },
   R: { name: "Premium", days: 365, admins: 99, users: 99, priceLabel: "100 000 F / an",
        features: ["Admins & utilisateurs illimités", "1 an inclus", "Toutes les fonctions"] },
