@@ -3680,12 +3680,23 @@ export default function App() {
       typeMap[key].marge += s.total - s.cost;
     });
     const byType = Object.values(typeMap).sort((a, b) => b.revenue - a.revenue);
+    const kindRev = { or: 0, bijoux: 0, divers: 0 };
+    pSales.forEach((s) => { kindRev[s.kind === "divers" ? "divers" : (s.kind === "bijoux" ? "bijoux" : "or")] += s.total; });
+    const pieData = [{ name: "Or", value: kindRev.or }, { name: "Bijoux", value: kindRev.bijoux }, { name: "Divers", value: kindRev.divers }].filter((d) => d.value > 0);
+    const exportPeriode = () => xlsxExportG(`rapport-${reportPeriod}-${TODAY}.xlsx`, {
+      "Ventes": pSales.map((s) => ({ Date: s.date, Heure: s.time || "", Produit: s.label, Client: s.client || "", Total: s.total, "Payé": s.total - balanceFor(s), Paiement: s.pay || "" })),
+      "Achats": pPurch.map((p) => ({ Date: p.date, Heure: p.time || "", Carat: p.karat ? p.karat + "K" : "brut", "Poids (g)": p.weight, "Prix/g": p.ppg, Client: p.client || "", Total: p.total })),
+      "Dépenses": pExp.map((e) => ({ Date: e.date, "Libellé": e.label, "Catégorie": e.cat, Montant: e.amount, Paiement: e.pay || "" })),
+    });
     return (
       <>
-        <div className="seg seg-lg seg-4">
-          {["today", "month", "year", "all"].map((p) => (
-            <button key={p} className={`seg-btn ${reportPeriod === p ? "active" : ""}`} onClick={() => setReportPeriod(p)}>{PERIOD_LABEL[p]}</button>
-          ))}
+        <div className="rep-toolbar">
+          <div className="seg seg-lg seg-4">
+            {["today", "month", "year", "all"].map((p) => (
+              <button key={p} className={`seg-btn ${reportPeriod === p ? "active" : ""}`} onClick={() => setReportPeriod(p)}>{PERIOD_LABEL[p]}</button>
+            ))}
+          </div>
+          <button className="btn btn-line" onClick={exportPeriode}><Download size={15} /> Exporter la période</button>
         </div>
         <div className="kpis">
           <Kpi icon={Receipt} label={`Chiffre d'affaires · ${PERIOD_LABEL[reportPeriod].toLowerCase()}`} value={fcfa(pCA)} sub={`Marge brute ${fcfa(pMarge)} · ${pSales.length} vente(s)`} tone="gold" />
@@ -3711,12 +3722,28 @@ export default function App() {
             </div>
           </div>
           <div className="card">
-            <div className="card-head"><h3>Articles divers les plus vendus</h3></div>
-            <table className="table">
-              <thead><tr><th>Article</th><th className="r">Ventes</th><th className="r">En stock</th></tr></thead>
-              <tbody>{topDivers.map((it) => <tr key={it.id}><td>{it.name}</td><td className="r num">{it.sold}</td><td className="r num">{it.qty}</td></tr>)}</tbody>
-            </table>
+            <div className="card-head"><h3>Répartition du CA</h3><span className="muted">{PERIOD_LABEL[reportPeriod].toLowerCase()}</span></div>
+            <div style={{ height: 280 }}>
+              {pieData.length === 0 ? <p className="muted small">Aucune vente sur la période.</p> : (
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={92} label={(e) => `${e.name}`}>
+                      {pieData.map((e, i) => <Cell key={i} fill={PIE[i % PIE.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v) => fcfaLong(v)} contentStyle={{ borderRadius: 10, border: "1px solid #e6ddcc", fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Articles divers les plus vendus</h3></div>
+          <table className="table">
+            <thead><tr><th>Article</th><th className="r">Ventes</th><th className="r">En stock</th></tr></thead>
+            <tbody>{topDivers.map((it) => <tr key={it.id}><td>{it.name}</td><td className="r num">{it.sold}</td><td className="r num">{it.qty}</td></tr>)}</tbody>
+          </table>
         </div>
         <div className="card">
           <div className="card-head">
@@ -4547,6 +4574,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .stat-red { border-color:#e3b3a6; background:#fbeee9; }
 .stat-red .stat-val { color:var(--clay); }
 .shop-flag { border-left:4px solid var(--gold); }
+.rep-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.rep-toolbar .seg { margin-bottom:0; }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
