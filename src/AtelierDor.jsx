@@ -963,9 +963,12 @@ function ChatMedia({ media, kind, onImage }) {
   return null;
 }
 
-function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, onDelete, unread, onNotice, limits, shopId, onUpsell }) {
+function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, onSend, onDelete, unread, unreadMap, onSeen, onNotice, limits, shopId, onUpsell }) {
   const lim = limits || { img: 1.5, audioSec: 30, file: 2, storage: false };
   const useStorage = !!(lim.storage && shopId);
+  const peeps = people || [];
+  const [activeChat, setActiveChat] = useState("all");
+  const sendTo = (payload) => onSend({ ...payload, to: activeChat });
   const [text, setText] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const [recording, setRecording] = useState(false);
@@ -979,8 +982,18 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const timerRef = useRef(null);
-  const sorted = [...messages].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const visible = messages.filter((m) => {
+    if (activeChat === "all") return !m.to || m.to === "all";
+    return (m.userId === myId && m.to === activeChat) || (m.userId === activeChat && m.to === myId);
+  });
+  const sorted = [...visible].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const activePerson = peeps.find((p) => p.id === activeChat);
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages.length]);
+  useEffect(() => {
+    if (!open || !onSeen) return;
+    const maxTs = sorted.reduce((mx, m) => Math.max(mx, m.ts || 0), 0);
+    if (maxTs) onSeen(activeChat, maxTs);
+  }, [open, activeChat, sorted.length]);
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
   const uploadToStorage = async (blob, ext, name) => {
     try {
@@ -990,7 +1003,7 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
       return { path, name };
     } catch (e) { return null; }
   };
-  const submitText = () => { const t = text.trim(); if (!t) return; onSend({ text: t }); setText(""); };
+  const submitText = () => { const t = text.trim(); if (!t) return; sendTo({ text: t }); setText(""); };
   const pickImage = async (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = "";
     if (!f) return;
@@ -1000,10 +1013,10 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
         const blob = await compressImageBlob(f, 2000, 0.85);
         if (!blob) { onNotice && onNotice("Image illisible.", "Photo"); return; }
         const m = await uploadToStorage(blob, "jpg");
-        if (m) onSend({ image: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Photo");
+        if (m) sendTo({ image: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Photo");
       } else {
         const data = await compressImage(f, 1100, 0.6);
-        if (data) onSend({ image: data }); else onNotice && onNotice("Image illisible.", "Photo");
+        if (data) sendTo({ image: data }); else onNotice && onNotice("Image illisible.", "Photo");
       }
     } finally { setBusy(false); }
   };
@@ -1016,10 +1029,10 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
       if (useStorage) {
         const ext = ((f.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "")) || "bin";
         const m = await uploadToStorage(f, ext, f.name);
-        if (m) onSend({ file: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Document");
+        if (m) sendTo({ file: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Document");
       } else {
         const data = await fileToDataURL(f);
-        if (data) onSend({ file: { name: f.name, type: f.type, data } }); else onNotice && onNotice("Document illisible.", "Document");
+        if (data) sendTo({ file: { name: f.name, type: f.type, data } }); else onNotice && onNotice("Document illisible.", "Document");
       }
     } finally { setBusy(false); }
   };
@@ -1037,8 +1050,8 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
         if (!blob.size) return;
         setBusy(true);
         try {
-          if (useStorage) { const m = await uploadToStorage(blob, "webm"); if (m) onSend({ audio: m }); else onNotice && onNotice("Envoi du vocal impossible. Vérifie ta connexion.", "Vocal"); }
-          else { const data = await fileToDataURL(blob); if (data) onSend({ audio: data }); }
+          if (useStorage) { const m = await uploadToStorage(blob, "webm"); if (m) sendTo({ audio: m }); else onNotice && onNotice("Envoi du vocal impossible. Vérifie ta connexion.", "Vocal"); }
+          else { const data = await fileToDataURL(blob); if (data) sendTo({ audio: data }); }
         } finally { setBusy(false); }
       };
       mr.start(); recRef.current = mr; setRecording(true); setRecSec(0);
@@ -1061,12 +1074,25 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
       {open && (
         <div className="chat-panel">
           <div className="chat-head">
-            <MessageCircle size={16} /> <strong>Messagerie</strong> <span className="muted small">équipe</span>
+            <MessageCircle size={16} /> <strong>Messagerie</strong>
+            <span className="muted small">{activeChat === "all" ? "équipe" : (activePerson ? activePerson.name : "privé")}</span>
             {notifPerm === "default" && <button className="chat-notif" onClick={askNotif} title="Activer les notifications">🔔 Activer</button>}
           </div>
+          {peeps.length > 0 && (
+            <div className="chat-tabs">
+              <button className={`chat-tab ${activeChat === "all" ? "on" : ""}`} onClick={() => setActiveChat("all")}>
+                Équipe{(unreadMap && unreadMap.all > 0) ? <span className="tab-dot">{unreadMap.all > 9 ? "9+" : unreadMap.all}</span> : null}
+              </button>
+              {peeps.map((p) => (
+                <button key={p.id} className={`chat-tab ${activeChat === p.id ? "on" : ""}`} onClick={() => setActiveChat(p.id)} title={p.role === "patron" ? "Patron" : "Vendeur"}>
+                  {p.name}{p.role === "patron" ? " 👑" : ""}{(unreadMap && unreadMap[p.id] > 0) ? <span className="tab-dot">{unreadMap[p.id] > 9 ? "9+" : unreadMap[p.id]}</span> : null}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="chat-list" ref={listRef}>
             {sorted.length === 0
-              ? <p className="muted small chat-empty">Aucun message pour l'instant.<br />Écris, ou envoie une photo, un vocal ou un document.</p>
+              ? <p className="muted small chat-empty">{activeChat === "all" ? "Aucun message d'équipe pour l'instant." : `Conversation privée avec ${activePerson ? activePerson.name : ""}.`}<br />Écris, ou envoie une photo, un vocal ou un document.</p>
               : sorted.map((m) => {
                 const mine = m.userId === myId;
                 if (m.removed) {
@@ -1112,7 +1138,7 @@ function ChatWidget({ messages, reads, myId, isPatron, open, onToggle, onSend, o
               <button className="chat-icon" onClick={() => imgRef.current && imgRef.current.click()} title="Photo" aria-label="Photo" disabled={busy}>📷</button>
               <button className="chat-icon" onClick={() => fileRef.current && fileRef.current.click()} title="Document" aria-label="Document" disabled={busy}>📎</button>
               <button className="chat-icon" onClick={startRec} title="Message vocal" aria-label="Vocal" disabled={busy}>🎤</button>
-              <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={busy ? "Envoi en cours…" : "Message…"} onKeyDown={(e) => e.key === "Enter" && submitText()} disabled={busy} />
+              <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={busy ? "Envoi en cours…" : (activeChat === "all" ? "Message à l'équipe…" : `Message à ${activePerson ? activePerson.name : ""}…`)} onKeyDown={(e) => e.key === "Enter" && submitText()} disabled={busy} />
               <button className="chat-send" onClick={submitText} disabled={!text.trim() || busy} aria-label="Envoyer"><Send size={18} /></button>
               <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickImage} />
               <input ref={fileRef} type="file" style={{ display: "none" }} onChange={pickFile} />
@@ -2629,7 +2655,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [reads, setReads] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatSeen, setChatSeen] = useState(0);
+  const [chatSeen, setChatSeen] = useState({}); // { all: ts, [userId]: ts }
   const [users, setUsers] = useState(seedUsers);
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
@@ -2842,7 +2868,7 @@ export default function App() {
       try {
         const p = await STORE.get("atelierdor:pin"); if (p) setPin(JSON.parse(p));
         const ld = await STORE.get("atelierdor:lockdelay"); if (ld != null && ld !== "") setLockDelay(parseInt(ld) || 0);
-        const cs = await STORE.get("atelierdor:chatseen"); if (cs) setChatSeen(parseInt(cs) || 0);
+        const cs = await STORE.get("atelierdor:chatseenmap"); if (cs) { try { setChatSeen(JSON.parse(cs) || {}); } catch (e) { /* */ } }
       } catch (e) { /* */ }
       finally { setLicReady(true); }
     })();
@@ -3079,7 +3105,7 @@ export default function App() {
   }, [pin, pinOk, lockDelay]);
 
   // marque les messages comme lus quand le chat est ouvert (et à l'arrivée de nouveaux)
-  useEffect(() => { if (chatOpen) markChatSeen(); }, [chatOpen, messages.length]);
+  // la lecture par conversation est gérée par markSeen via le ChatWidget
 
   // notifications (son + navigateur) à la réception d'un message d'un autre
   const notifInit = useRef(false);
@@ -3088,7 +3114,7 @@ export default function App() {
     if (!currentUser || !messages.length) return;
     const maxTs = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0);
     if (!notifInit.current) { notifInit.current = true; notifTsRef.current = maxTs; return; }
-    const incoming = messages.filter((m) => m.userId !== currentUser.id && (m.ts || 0) > notifTsRef.current && !m.removed);
+    const incoming = messages.filter((m) => m.userId !== currentUser.id && (m.ts || 0) > notifTsRef.current && !m.removed && (!m.to || m.to === "all" || m.to === currentUser.id));
     notifTsRef.current = maxTs;
     if (!incoming.length) return;
     const last = [...incoming].sort((a, b) => (a.ts || 0) - (b.ts || 0)).pop();
@@ -3176,6 +3202,7 @@ export default function App() {
     const text = (p.text || "").trim();
     if (!text && !p.image && !p.audio && !p.file) return;
     const msg = { id: uid(), userId: currentUser.id, by: me(), role: currentUser.role, date: TODAY, time: nowTime(), ts: Date.now() };
+    if (p.to && p.to !== "all") msg.to = p.to;
     if (text) msg.text = text;
     if (p.image) msg.image = p.image;
     if (p.audio) msg.audio = p.audio;
@@ -3191,11 +3218,15 @@ export default function App() {
         const paths = [];
         [m.image, m.audio, m.file].forEach((md) => { if (md && typeof md === "object" && md.path) paths.push(md.path); });
         if (paths.length) { try { supabase.storage.from("chat").remove(paths); } catch (e) { /* */ } }
-        setMessages((arr) => arr.map((x) => x.id === m.id ? { id: x.id, userId: x.userId, by: x.by, role: x.role, date: x.date, time: x.time, ts: x.ts, removed: true } : x));
+        setMessages((arr) => arr.map((x) => x.id === m.id ? { id: x.id, userId: x.userId, by: x.by, role: x.role, date: x.date, time: x.time, ts: x.ts, ...(x.to ? { to: x.to } : {}), removed: true } : x));
       },
     });
   };
-  const markChatSeen = () => { const last = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0); setChatSeen(last); try { STORE.set("atelierdor:chatseen", String(last)); } catch (e) { /* */ } if (currentUser) setReads((arr) => { const others = arr.filter((r) => r.id !== currentUser.id); return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: last }]; }); };
+  const markSeen = (key, ts) => {
+    if (!ts) return;
+    setChatSeen((prev) => { if ((prev[key] || 0) >= ts) return prev; const next = { ...prev, [key]: ts }; try { STORE.set("atelierdor:chatseenmap", JSON.stringify(next)); } catch (e) { /* */ } return next; });
+    if (currentUser) setReads((arr) => { const cur = arr.find((r) => r.id === currentUser.id); const newTs = Math.max(cur ? cur.ts || 0 : 0, ts); if (cur && (cur.ts || 0) >= newTs) return arr; const others = arr.filter((r) => r.id !== currentUser.id); return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: newTs }]; });
+  };
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
   const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
@@ -4550,7 +4581,16 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const chatUnread = messages.filter((m) => (m.ts || 0) > chatSeen && m.userId !== currentUser.id && !m.removed).length;
+  const chatUnreadMap = (() => {
+    const map = { all: 0 };
+    messages.forEach((m) => {
+      if (m.removed || m.userId === currentUser.id) return;
+      if (!m.to || m.to === "all") { if ((m.ts || 0) > (chatSeen.all || 0)) map.all += 1; }
+      else if (m.to === currentUser.id) { const k = m.userId; if ((m.ts || 0) > (chatSeen[k] || 0)) map[k] = (map[k] || 0) + 1; }
+    });
+    return map;
+  })();
+  const chatUnread = Object.values(chatUnreadMap).reduce((a, b) => a + b, 0);
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
   const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
 
@@ -4699,7 +4739,7 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
-      <ChatWidget messages={messages} reads={reads} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
+      <ChatWidget messages={messages} reads={reads} people={users.filter((u) => u.id !== currentUser.id)} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} unreadMap={chatUnreadMap} onSeen={markSeen} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
     </div>
   );
 }
@@ -5254,6 +5294,12 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chat-read.seen { color:var(--gold); font-weight:600; }
 .chat-bubble.removed { background:transparent !important; border:1px dashed var(--line); }
 .chat-removed { font-style:italic; color:var(--muted); font-size:.82rem; }
+.chat-tabs { display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid var(--line); overflow-x:auto; flex-shrink:0; }
+.chat-tab { flex-shrink:0; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:5px 12px; font-size:.78rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:.12s; }
+.chat-tab:hover { border-color:var(--gold); }
+.chat-tab.on { background:var(--gold); color:#fff; border-color:var(--gold); }
+.tab-dot { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; margin-left:5px; border-radius:999px; background:var(--clay); color:#fff; font-size:.62rem; font-weight:700; vertical-align:middle; }
+.chat-tab.on .tab-dot { background:#fff; color:var(--gold); }
 .chat-img { max-width:200px; max-height:220px; border-radius:10px; display:block; cursor:pointer; margin-bottom:2px; }
 .chat-audio { width:210px; max-width:100%; height:38px; }
 .chat-file { display:inline-flex; align-items:center; gap:6px; font-weight:600; color:var(--gold); text-decoration:none; word-break:break-all; }
