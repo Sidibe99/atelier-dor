@@ -328,6 +328,15 @@ const Modal = ({ title, sub, onClose, children, footer }) => (
 );
 
 /* ------------------------------- modales -------------------------------- */
+const ConfirmModal = ({ title, message, okLabel, danger, onCancel, onOk }) => (
+  <Modal title={title || "Confirmation"} onClose={onCancel}
+    footer={<>
+      <button className="btn btn-line" onClick={onCancel}>Annuler</button>
+      <button className={`btn ${danger ? "btn-clay" : "btn-gold"}`} onClick={onOk}>{okLabel || "Confirmer"}</button>
+    </>}>
+    <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>{message}</p>
+  </Modal>
+);
 function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle, init }) {
   const i = init || {};
   const [kind, setKind] = useState(i.kind || "or");
@@ -1234,6 +1243,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
   const [team, setTeam] = useState(null); // null = chargement
   const [err, setErr] = useState("");
   const [modal, setModal] = useState(false);
+  const [confirmRm, setConfirmRm] = useState(null);
   const f = FORMULAS[plan] || FORMULAS.S;
   const load = useCallback(async () => {
     setErr("");
@@ -1245,8 +1255,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
   }, [shopId]);
   useEffect(() => { load(); }, [load]);
 
-  const removeVendor = async (id) => {
-    if (typeof window !== "undefined" && !window.confirm("Retirer ce vendeur ? Il ne pourra plus se connecter.")) return;
+  const doRemoveVendor = async (id) => {
     try {
       const { error } = await supabase.from("profiles").delete().eq("id", id);
       if (error) throw error;
@@ -1288,7 +1297,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
                   <td className="muted">{u.email || "—"}</td>
                   <td><span className={`pill ${u.role === "admin" ? "pill-gold" : "pill-ink"}`}>{u.role === "admin" ? "Patron" : "Vendeur"}</span></td>
                   <td className="r">{u.role === "vendeur" && u.id !== meId && (
-                    <button className="icon-btn" onClick={() => removeVendor(u.id)}><Trash2 size={15} /></button>
+                    <button className="icon-btn" onClick={() => setConfirmRm(u)}><Trash2 size={15} /></button>
                   )}</td>
                 </tr>
               ))}
@@ -1305,6 +1314,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
         </p>
       </div>
       {modal && <VendorModal onClose={() => setModal(false)} onCreated={() => { setModal(false); load(); }} />}
+      {confirmRm && <ConfirmModal title="Retirer ce vendeur ?" message={`« ${confirmRm.name || confirmRm.email || "Ce vendeur"} » ne pourra plus se connecter.`} okLabel="Retirer" danger onCancel={() => setConfirmRm(null)} onOk={() => { const v = confirmRm; setConfirmRm(null); doRemoveVendor(v.id); }} />}
     </>
   );
 }
@@ -1451,6 +1461,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [err, setErr] = useState("");
   const [allowed, setAllowed] = useState(null); // null = en cours, true, false
   const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
+  const [confirmShop, setConfirmShop] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
@@ -1509,13 +1520,14 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
     if (msg) throw new Error(msg);
     return { account: { email, password } };
   };
-  const toggleStatus = async (shop) => {
-    const next = shop.status === "suspended" ? "active" : "suspended";
-    const verb = next === "suspended" ? "suspendre" : "réactiver";
-    if (!window.confirm(`Veux-tu ${verb} « ${shop.name} » ?`)) return;
+  const doToggleStatus = async (shop, next) => {
     const { error } = await supabase.from("shops").update({ status: next }).eq("id", shop.id);
     if (error) { window.alert("Action impossible. Vérifie ta connexion."); return; }
     await load();
+  };
+  const toggleStatus = (shop) => {
+    const next = shop.status === "suspended" ? "active" : "suspended";
+    setConfirmShop({ shop, next });
   };
 
   const statusOf = (s) => {
@@ -1651,6 +1663,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
       {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
+      {confirmShop && <ConfirmModal title={confirmShop.next === "suspended" ? "Suspendre cette boutique ?" : "Réactiver cette boutique ?"} message={confirmShop.next === "suspended" ? `« ${confirmShop.shop.name} » : l'accès sera bloqué jusqu'à réactivation.` : `« ${confirmShop.shop.name} » : l'accès sera rétabli.`} okLabel={confirmShop.next === "suspended" ? "Suspendre" : "Réactiver"} danger={confirmShop.next === "suspended"} onCancel={() => setConfirmShop(null)} onOk={() => { const c = confirmShop; setConfirmShop(null); doToggleStatus(c.shop, c.next); }} />}
     </div>
   );
 }
@@ -1670,13 +1683,14 @@ function BackupModal({ mode, json, onClose, onImport }) {
     } catch (e) { window.alert("Le téléchargement est bloqué ici — utilise plutôt « Copier »."); }
   };
   const pickFile = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setText(String(r.result)); r.readAsText(f); };
+  const [confirming, setConfirming] = useState(null);
   const doImport = () => {
     let d; try { d = JSON.parse(text); } catch (e) { window.alert("Texte illisible : ce n'est pas un JSON valide."); return; }
     if (!d || (!d.sales && !d.gold)) { window.alert("Ce fichier n'est pas une sauvegarde Atelier d'Or."); return; }
-    if (!window.confirm("Importer cette sauvegarde ? Elle remplacera toutes les données actuelles.")) return;
-    onImport(d);
+    setConfirming(d);
   };
   return (
+    <>
     <Modal title={mode === "export" ? "Exporter la sauvegarde" : "Importer une sauvegarde"} onClose={onClose}
       footer={mode === "export"
         ? <div className="foot-actions" style={{ marginLeft: 0, width: "100%", flexWrap: "wrap" }}><button className="btn btn-ghost" onClick={onClose}>Fermer</button><button className="btn btn-line" onClick={copy}>{copied ? "Copié ✓" : "Copier"}</button><button className="btn btn-gold" onClick={download}>Télécharger le fichier</button></div>
@@ -1687,6 +1701,8 @@ function BackupModal({ mode, json, onClose, onImport }) {
       <textarea className="backup-area num" value={text} onChange={(e) => setText(e.target.value)} readOnly={mode === "export"} placeholder={mode === "import" ? "Colle ici le contenu de ta sauvegarde…" : ""} />
       <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={pickFile} />
     </Modal>
+    {confirming && <ConfirmModal title="Importer cette sauvegarde ?" message="Elle remplacera toutes les données actuelles de cette boutique." okLabel="Importer" danger onCancel={() => setConfirming(null)} onOk={() => { const d = confirming; setConfirming(null); onImport(d); }} />}
+    </>
   );
 }
 
@@ -1753,10 +1769,11 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
   const [shopAddr, setShopAddr] = useState(shop?.addr || "");
   const [shopLogo, setShopLogo] = useState(shop?.logo || "");
   const [savedMsg, setSavedMsg] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
 
   useEffect(() => { (async () => { try { const v = await STORE.get("atelierdor:admincodes"); if (v) setLog(JSON.parse(v)); } catch (e) { /* */ } try { const a = await STORE.get("atelierdor:adminok"); if (a === "1") setAuthed(true); } catch (e) { /* */ } })(); }, []);
   const saveLog = (l) => { setLog(l); STORE.set("atelierdor:admincodes", JSON.stringify(l)); };
-  const delCode = (i) => { if (window.confirm("Supprimer ce code de l'historique ?")) saveLog(log.filter((_, j) => j !== i)); };
+  const delCode = (i) => setConfirmDel(i);
   const tryAuth = () => { if (pw === MASTER_PW) { setAuthed(true); try { STORE.set("atelierdor:adminok", "1"); } catch (e) { /* */ } } else setAutherr(true); };
   const lockAdmin = () => { try { STORE.del("atelierdor:adminok"); } catch (e) { /* */ } setAuthed(false); setPw(""); };
   const generate = () => {
@@ -1879,6 +1896,7 @@ function AdminSpace({ onExit, shop, setShop, users, setUsers, resellerPhone, set
         )}
       </div>
       <p className="disclaim">Protection locale : codes signés et vérifiés hors-ligne. La configuration s'applique à <strong>cet appareil</strong> (idéal pour préparer le téléphone du client avant de lui remettre). Une vraie configuration à distance, l'anti-partage et la révocation nécessitent une vérification en ligne. Change <strong>LIC_SECRET</strong> et <strong>MASTER_PW</strong> avant de revendre.</p>
+      {confirmDel != null && <ConfirmModal title="Supprimer ce code ?" message="Le code sera retiré de l'historique de cet appareil." okLabel="Supprimer" danger onCancel={() => setConfirmDel(null)} onOk={() => { saveLog(log.filter((_, j) => j !== confirmDel)); setConfirmDel(null); }} />}
     </div>
   );
 }
@@ -2284,6 +2302,8 @@ export default function App() {
   const [clientView, setClientView] = useState(null);
   const [productView, setProductView] = useState(null);
   const [returnFor, setReturnFor] = useState(null);
+  const [confirm, setConfirm] = useState(null); // { title, message, okLabel, danger, onOk }
+  const ask = (opts) => setConfirm(opts);
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -2671,15 +2691,14 @@ export default function App() {
     return () => clearTimeout(t);
   }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
-  const resetData = async () => {
-    if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
+  const resetData = () => ask({ title: "Tout réinitialiser ?", message: "Toutes les données seront effacées et remplacées par les exemples. Cette action est définitive.", danger: true, okLabel: "Réinitialiser", onOk: async () => {
     await STORE.del("atelierdor:data");
     try { await STORE.del("atelierdor:session"); await STORE.del("atelierdor:view"); } catch (e) { /* */ }
     setGold(seedGold); setDivers(seedDivers); setClients(seedClients);
     setSales(seedSales); setPurchases(seedPurchases); setPurchasePayments(seedPurchasePayments); setClosures(seedClosures); setPayments(seedPayments); setExpenses(seedExpenses); setUsers(seedUsers);
     setPrime(3); setMVente(8); setMAchat(4); setFondCaisse(100000);
     setShop({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
-  };
+  } });
 
   const perGram24 = (spot / OZ) * rate;
   const prices = useMemo(() => {
@@ -2815,7 +2834,7 @@ export default function App() {
   const delUser = (id) => {
     if (users.length <= 1) { window.alert("Il faut garder au moins un utilisateur."); return; }
     const u = users.find((x) => x.id === id);
-    if (window.confirm("Supprimer cet employé ?")) { setUsers((arr) => arr.filter((x) => x.id !== id)); log("user", "Utilisateur supprimé", u ? u.name : ""); }
+    ask({ title: "Supprimer cet employé ?", message: u ? `« ${u.name} » ne pourra plus se connecter.` : "Cet employé ne pourra plus se connecter.", danger: true, okLabel: "Supprimer", onOk: () => { setUsers((arr) => arr.filter((x) => x.id !== id)); log("user", "Utilisateur supprimé", u ? u.name : ""); } });
   };
   const login = (u) => { setCurrentUser(u); setView("dash"); try { STORE.set("atelierdor:session", u.id); } catch (e) { /* */ } };
   const logout = () => {
@@ -2889,7 +2908,7 @@ export default function App() {
     setBackup(null);
     window.alert("Sauvegarde importée. Toutes les données ont été restaurées.");
   };
-  const del = (setter, id, kind, label) => { if (window.confirm("Supprimer cet élément ?")) { setter((arr) => arr.filter((x) => x.id !== id)); if (kind) log(kind, "Suppression", label || ""); } };
+  const del = (setter, id, kind, label) => ask({ title: "Supprimer cet élément ?", message: label ? `« ${label} » sera définitivement retiré.` : "Cet élément sera définitivement retiré. Cette action est irréversible.", danger: true, okLabel: "Supprimer", onOk: () => { setter((arr) => arr.filter((x) => x.id !== id)); if (kind) log(kind, "Suppression", label || ""); } });
 
   /* ------------------------------- vues ------------------------------- */
   const NAV = [
@@ -4156,6 +4175,11 @@ export default function App() {
       {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
       {formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}
       {returnFor && <RetourModal sale={returnFor} onClose={() => setReturnFor(null)} onSave={(p) => recordReturn(returnFor, p)} />}
+      {confirm && (
+        <ConfirmModal title={confirm.title} message={confirm.message} okLabel={confirm.okLabel} danger={confirm.danger}
+          onCancel={() => setConfirm(null)}
+          onOk={() => { const f = confirm.onOk; setConfirm(null); if (f) f(); }} />
+      )}
       {history && (() => {
         const it = history.item;
         const isSale = history.type === "sale";
