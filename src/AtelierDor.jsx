@@ -328,15 +328,16 @@ const Modal = ({ title, sub, onClose, children, footer }) => (
 );
 
 /* ------------------------------- modales -------------------------------- */
-function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle }) {
-  const [kind, setKind] = useState("or");
+function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle, init }) {
+  const i = init || {};
+  const [kind, setKind] = useState(i.kind || "or");
   const [client, setClient] = useState("");
   const [pay, setPay] = useState("Espèces");
   const [stockId, setStockId] = useState("");
-  const [karat, setKarat] = useState(21);
-  const [weight, setWeight] = useState("");
-  const [ppg, setPpg] = useState(Math.round(prices[21].vente));
-  const [facon, setFacon] = useState("");
+  const [karat, setKarat] = useState(i.karat != null ? i.karat : 21);
+  const [weight, setWeight] = useState(i.weight != null ? String(i.weight) : "");
+  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : Math.round(prices[21].vente));
+  const [facon, setFacon] = useState(i.facon ? String(i.facon) : "");
   const [dId, setDId] = useState("");
   const [dQty, setDQty] = useState(1);
   const [paidNow, setPaidNow] = useState("");
@@ -447,7 +448,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   );
 }
 
-function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
+function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
   // 1 - Valeur d'un article
   const [k1, setK1] = useState(21);
   const [w1, setW1] = useState("");
@@ -534,6 +535,12 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
         </div>
         {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix de référence {fcfa(refPpg)}/g · rachat −{mAchat}% = {fcfa(buyG)}/g · vente +{mVente}% = {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p>}
         {!k1 && <p className="calc-hint">ℹ️ Le <b>prix de référence</b> est ta base du gramme (la valeur de l'or au moment du calcul). L'app en déduit automatiquement le <b style={{ color: "var(--clay)" }}>rachat</b> (− marge) et la <b style={{ color: "var(--green)" }}>vente</b> (+ marge). Pour un calcul exact selon la pureté, choisis plutôt le <b>carat réel</b> au lieu de « Sans carat ».</p>}
+        {onUse && (
+          <div className="data-actions" style={{ marginTop: 12 }}>
+            <button className="btn btn-line" disabled={!(wv > 0 && buyG > 0)} onClick={() => onUse("purchase", { karat: k1, weight: wv, ppg: buyG })}><ArrowDownLeft size={15} /> Enregistrer le rachat</button>
+            <button className="btn btn-gold" disabled={!(wv > 0 && sellG > 0)} onClick={() => onUse("sale", { kind: "or", karat: k1, weight: wv, ppg: sellG, facon: fac })}><Plus size={15} /> Enregistrer la vente</button>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -604,11 +611,12 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat }) {
   );
 }
 
-function PurchaseModal({ prices, clients, onClose, onSave }) {
+function PurchaseModal({ prices, clients, onClose, onSave, init }) {
+  const i = init || {};
   const [client, setClient] = useState("");
-  const [karat, setKarat] = useState(18);
-  const [weight, setWeight] = useState("");
-  const [ppg, setPpg] = useState(Math.round(prices[18].achat));
+  const [karat, setKarat] = useState(i.karat != null ? i.karat : 18);
+  const [weight, setWeight] = useState(i.weight != null ? String(i.weight) : "");
+  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : Math.round(prices[18].achat));
   const [note, setNote] = useState("");
   const [pay, setPay] = useState("Espèces");
   const [paidNow, setPaidNow] = useState("");
@@ -1530,6 +1538,37 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const monthKey = TODAY.slice(0, 7);
   const encaisseMois = payments.reduce((sum, p) => sum + (String(p.paid_on).slice(0, 7) === monthKey ? (p.amount || 0) : 0), 0);
   const activeCount = shops.filter((s) => s.status !== "suspended" && (!s.expiry || String(s.expiry).slice(0, 10) >= TODAY)).length;
+  const daysLeft = (s) => { const exp = s.expiry ? String(s.expiry).slice(0, 10) : ""; return exp ? Math.ceil((new Date(exp).getTime() - new Date(TODAY).getTime()) / 86400000) : null; };
+  const soonCount = shops.filter((s) => { if (s.status === "suspended") return false; const d = daysLeft(s); return d != null && d >= 0 && d <= 7; }).length;
+  const problemCount = shops.filter((s) => s.status === "suspended" || (s.expiry && String(s.expiry).slice(0, 10) < TODAY)).length;
+  const shopRank = (s) => {
+    if (s.status === "suspended") return 0;
+    const exp = s.expiry ? String(s.expiry).slice(0, 10) : "";
+    if (exp && exp < TODAY) return 0;
+    const d = daysLeft(s);
+    if (d != null && d <= 7) return 1;
+    return 2;
+  };
+  const sortedShops = [...shops].sort((a, b) => {
+    const r = shopRank(a) - shopRank(b);
+    if (r !== 0) return r;
+    const ea = a.expiry ? String(a.expiry).slice(0, 10) : "9999-99-99";
+    const eb = b.expiry ? String(b.expiry).slice(0, 10) : "9999-99-99";
+    return ea.localeCompare(eb);
+  });
+  const waReminder = (s) => {
+    const p = String(s.phone || "").replace(/[^\d]/g, "");
+    if (!p) return null;
+    const planName = FORMULAS[s.plan] ? FORMULAS[s.plan].name : s.plan;
+    const price = priceLabelOf(s.plan);
+    const exp = s.expiry ? dateFr(String(s.expiry).slice(0, 10)) : "";
+    const st = statusOf(s);
+    let msg;
+    if (st.tone === "red") msg = `Bonjour, votre abonnement Atelier d'Or (${planName}) ${s.status === "suspended" ? "est suspendu" : `a expiré le ${exp}`}. Pour le réactiver : ${price}. Merci.`;
+    else if (st.tone === "amber") msg = `Bonjour, votre abonnement Atelier d'Or (${planName}) expire le ${exp}. Pensez à le renouveler (${price}). Merci.`;
+    else msg = `Bonjour, au sujet de votre abonnement Atelier d'Or (boutique : ${s.name}).`;
+    return `https://wa.me/${p}?text=${encodeURIComponent(msg)}`;
+  };
 
   if (allowed === false) {
     return (
@@ -1560,6 +1599,8 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
           <div className="stat"><div className="stat-val">{fcfa(totalEncaisse)}</div><div className="stat-lab">Total encaissé</div></div>
           <div className="stat"><div className="stat-val">{fcfa(encaisseMois)}</div><div className="stat-lab">Encaissé ce mois</div></div>
           <div className="stat"><div className="stat-val">{activeCount}</div><div className="stat-lab">Boutiques actives</div></div>
+          <div className={`stat ${soonCount ? "stat-amber" : ""}`}><div className="stat-val">{soonCount}</div><div className="stat-lab">Expire ≤ 7 jours</div></div>
+          <div className={`stat ${problemCount ? "stat-red" : ""}`}><div className="stat-val">{problemCount}</div><div className="stat-lab">Expirées / suspendues</div></div>
         </div>
       )}
 
@@ -1574,11 +1615,12 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
         </div>
       ) : (
         <div className="reseller-list">
-          {shops.map((s) => {
+          {sortedShops.map((s) => {
             const st = statusOf(s);
-            const wa = waLink(s.phone, s.name);
+            const wa = waReminder(s);
+            const needsAction = st.tone === "red" || st.tone === "amber";
             return (
-              <div className="shop-card" key={s.id}>
+              <div className={`shop-card ${needsAction ? "shop-flag" : ""}`} key={s.id}>
                 <div className="shop-main">
                   <div className="shop-name">{s.name}</div>
                   <div className="shop-meta">
@@ -1590,7 +1632,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
                   </div>
                 </div>
                 <div className="shop-actions">
-                  {wa && <a className="btn btn-line" href={wa} target="_blank" rel="noreferrer">WhatsApp</a>}
+                  {wa && <a className={`btn ${needsAction ? "btn-gold" : "btn-line"}`} href={wa} target="_blank" rel="noreferrer">{needsAction ? "Relancer" : "WhatsApp"}</a>}
                   <button className="btn btn-line" onClick={() => setModal({ mode: "account", shop: s })}>Compte</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "payments", shop: s })}>Paiements</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "renew", shop: s })}><RefreshCw size={15} /> Renouveler</button>
@@ -1940,13 +1982,13 @@ function rcSep(color, W, P, dashed) {
 function receiptImageBlob(data, shop) {
   return new Promise((resolve) => {
     const W = 680, P = 44, scale = 2;
-    const INK = "#1c1611", MUT = "#8a7d68", CLAY = "#9c4a35", LINE = "#e6ddcc";
+    const INK = "#1c1611", MUT = "#8a7d68", CLAY = "#9c4a35", LINE = "#e6ddcc", GOLD = "#b8862f";
     const rows = [];
     const push = (h, draw) => rows.push({ h, draw });
     push(42, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 30px Georgia, serif"; ctx.textAlign = "center"; ctx.fillText(shop.name || "Atelier d'Or", W / 2, y + 30); });
     if (shop.addr) push(24, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText(shop.addr, W / 2, y + 18); });
     if (shop.phone) push(24, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText("Tél : " + shop.phone, W / 2, y + 18); });
-    push(24, rcSep(LINE, W, P));
+    push(26, (ctx, y) => { ctx.strokeStyle = GOLD; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(W / 2 - 42, y + 12); ctx.lineTo(W / 2 + 42, y + 12); ctx.stroke(); ctx.lineWidth = 1; });
     push(34, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 19px Arial"; ctx.textAlign = "left"; ctx.fillText(data.kind === "sale" ? "REÇU DE VENTE" : "BORDEREAU D'ACHAT", P, y + 22); ctx.fillStyle = MUT; ctx.font = "15px Arial"; ctx.textAlign = "right"; ctx.fillText("N° " + data.no, W - P, y + 22); });
     push(28, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "15px Arial"; ctx.textAlign = "left"; ctx.fillText(data.date + (data.time ? " · " + data.time : ""), P, y + 20); ctx.textAlign = "right"; ctx.fillText(data.client || "Client comptant", W - P, y + 20); });
     push(24, rcSep(LINE, W, P));
@@ -1955,7 +1997,13 @@ function receiptImageBlob(data, shop) {
       if (l.detail) push(22, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "14px Arial"; ctx.textAlign = "left"; ctx.fillText(l.detail, P, y + 16); });
     });
     push(24, rcSep(LINE, W, P));
-    push(38, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "700 22px Arial"; ctx.textAlign = "left"; ctx.fillText("TOTAL", P, y + 24); ctx.textAlign = "right"; ctx.fillText(fcfa(data.total), W - P, y + 24); });
+    push(48, (ctx, y) => {
+      const bx = P - 14, bw = W - 2 * P + 28, by = y + 2, bh = 38;
+      ctx.fillStyle = "#f7eed6";
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 9); ctx.fill(); } else ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = INK; ctx.font = "700 22px Arial"; ctx.textAlign = "left"; ctx.fillText("TOTAL", P, y + 28);
+      ctx.fillStyle = "#7a5a18"; ctx.textAlign = "right"; ctx.fillText(fcfa(data.total), W - P, y + 28);
+    });
     if (data.balance > 0) {
       push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "left"; ctx.fillText("Payé", P, y + 18); ctx.textAlign = "right"; ctx.fillText(fcfa(data.paid), W - P, y + 18); });
       push(30, (ctx, y) => { ctx.fillStyle = CLAY; ctx.font = "700 18px Arial"; ctx.textAlign = "left"; ctx.fillText("Reste dû", P, y + 20); ctx.textAlign = "right"; ctx.fillText(fcfa(data.balance), W - P, y + 20); });
@@ -1963,7 +2011,8 @@ function receiptImageBlob(data, shop) {
     if (data.pay) push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "16px Arial"; ctx.textAlign = "left"; ctx.fillText("Paiement", P, y + 18); ctx.textAlign = "right"; ctx.fillText(data.pay, W - P, y + 18); });
     if (data.note) push(26, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "italic 15px Arial"; ctx.textAlign = "left"; ctx.fillText("Note : " + data.note, P, y + 18); });
     push(28, rcSep(LINE, W, P, true));
-    push(28, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText("Merci de votre confiance", W / 2, y + 18); });
+    push(28, (ctx, y) => { ctx.fillStyle = GOLD; ctx.font = "700 16px Arial"; ctx.textAlign = "center"; ctx.fillText("Merci de votre confiance", W / 2, y + 18); });
+    push(22, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "13px Arial"; ctx.textAlign = "center"; ctx.fillText((shop.name || "Atelier d'Or") + (shop.phone ? " · " + shop.phone : ""), W / 2, y + 15); });
 
     const render = (logoImg, lw, lh) => {
       const logoH = lh ? lh + 14 : 0;
@@ -1973,6 +2022,8 @@ function receiptImageBlob(data, shop) {
       const ctx = canvas.getContext("2d");
       ctx.scale(scale, scale);
       ctx.fillStyle = "#fffdf8"; ctx.fillRect(0, 0, W, totalH);
+      ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.strokeRect(10.5, 10.5, W - 21, totalH - 21);
+      ctx.fillStyle = GOLD; ctx.fillRect(0, 0, W, 6);
       let y = P;
       if (logoImg && lh) { try { ctx.drawImage(logoImg, (W - lw) / 2, y, lw, lh); } catch (e) { /* logo non dessinable */ } y += logoH; }
       rows.forEach((r) => { r.draw(ctx, y); y += r.h; });
@@ -3837,7 +3888,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} />, settings: renderSettings, abo: renderAbo };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} onUse={(type, data) => { if (type === "sale") { setView("sales"); setModal({ type: "sale", init: data }); } else { setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -3944,8 +3995,8 @@ export default function App() {
         <main className="content">{VIEWS[cur]()}</main>
       </div>
 
-      {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} onClose={() => setModal(null)} onSave={addSale} onNewArticle={() => { go("stock"); setStockTab("divers"); setModal({ type: "divers" }); }} />}
-      {modal?.type === "purchase" && <PurchaseModal prices={prices} clients={clients} onClose={() => setModal(null)} onSave={addPurchase} />}
+      {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} init={modal.init} onClose={() => setModal(null)} onSave={addSale} onNewArticle={() => { go("stock"); setStockTab("divers"); setModal({ type: "divers" }); }} />}
+      {modal?.type === "purchase" && <PurchaseModal prices={prices} clients={clients} init={modal.init} onClose={() => setModal(null)} onSave={addPurchase} />}
       {modal?.type === "gold" && <GoldModal item={modal.data} onClose={() => setModal(null)} onSave={saveGold} />}
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
@@ -4490,7 +4541,12 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .reseller-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .reseller-empty { text-align:center; padding:48px 16px; display:flex; flex-direction:column; align-items:center; gap:14px; }
 .reseller-list { display:flex; flex-direction:column; gap:12px; }
-.reseller-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+.reseller-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+.stat-amber { border-color:#e6c46a; background:#fdf6e3; }
+.stat-amber .stat-val { color:var(--gold); }
+.stat-red { border-color:#e3b3a6; background:#fbeee9; }
+.stat-red .stat-val { color:var(--clay); }
+.shop-flag { border-left:4px solid var(--gold); }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
