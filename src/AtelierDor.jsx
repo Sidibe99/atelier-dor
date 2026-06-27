@@ -1965,15 +1965,33 @@ function receiptImageBlob(data, shop) {
     push(28, rcSep(LINE, W, P, true));
     push(28, (ctx, y) => { ctx.fillStyle = INK; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText("Merci de votre confiance", W / 2, y + 18); });
 
-    const totalH = rows.reduce((a, r) => a + r.h, 0) + P * 2;
-    const canvas = document.createElement("canvas");
-    canvas.width = W * scale; canvas.height = totalH * scale;
-    const ctx = canvas.getContext("2d");
-    ctx.scale(scale, scale);
-    ctx.fillStyle = "#fffdf8"; ctx.fillRect(0, 0, W, totalH);
-    let y = P;
-    rows.forEach((r) => { r.draw(ctx, y); y += r.h; });
-    canvas.toBlob((b) => resolve(b), "image/png");
+    const render = (logoImg, lw, lh) => {
+      const logoH = lh ? lh + 14 : 0;
+      const totalH = rows.reduce((a, r) => a + r.h, 0) + P * 2 + logoH;
+      const canvas = document.createElement("canvas");
+      canvas.width = W * scale; canvas.height = totalH * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#fffdf8"; ctx.fillRect(0, 0, W, totalH);
+      let y = P;
+      if (logoImg && lh) { try { ctx.drawImage(logoImg, (W - lw) / 2, y, lw, lh); } catch (e) { /* logo non dessinable */ } y += logoH; }
+      rows.forEach((r) => { r.draw(ctx, y); y += r.h; });
+      try { canvas.toBlob((b) => resolve(b), "image/png"); } catch (e) { resolve(null); }
+    };
+    if (shop.logo) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const ratio = (img.width && img.height) ? img.width / img.height : 1;
+        let lh = Math.min(70, img.height || 70), lw = lh * ratio;
+        if (lw > 240) { lw = 240; lh = lw / ratio; }
+        render(img, lw, lh);
+      };
+      img.onerror = () => render(null, 0, 0);
+      img.src = shop.logo;
+    } else {
+      render(null, 0, 0);
+    }
   });
 }
 
@@ -4116,7 +4134,8 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .karat { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; color:var(--gold);
   border:1px solid var(--gold); border-radius:6px; padding:2px 7px; display:inline-block; }
 .pct { font-size:11px; color:var(--muted); margin-left:4px; }
-.calc-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.calc-grid { column-count:2; column-gap:16px; }
+.calc-grid > .card { break-inside:avoid; margin-bottom:16px; display:inline-block; width:100%; }
 .calc-res { display:flex; gap:12px; margin-top:8px; }
 .calc-res > div { flex:1; background:#faf6ec; border:1px solid var(--line); border-radius:11px; padding:11px 13px; display:flex; flex-direction:column; gap:2px; }
 .calc-res .lab { font-size:12px; color:var(--muted); }
@@ -4131,7 +4150,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .calc-key.op { background:var(--gold-soft); color:var(--gold); }
 .calc-key.eq { background:var(--gold); color:#fff; border-color:var(--gold); }
 .calc-key.wide { grid-column:span 2; }
-@media (max-width:760px){ .calc-grid { grid-template-columns:1fr; } }
+@media (max-width:760px){ .calc-grid { column-count:1; } }
 .achat { color:var(--clay); font-weight:600; } .vente { color:var(--green); font-weight:600; }
 .pill { font-size:11px; font-weight:600; padding:2px 9px; border-radius:20px; }
 .pill-gold { background:var(--gold-soft); color:var(--gold); }
