@@ -3,7 +3,7 @@ import {
   LayoutGrid, ShoppingCart, ArrowDownLeft, Package, Users, BarChart3,
   Settings, Plus, X, Pencil, Trash2, Search, Coins, Scale, Gem, Wallet,
   TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer,
-  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History,
+  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History, MessageCircle, Send,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -49,6 +49,25 @@ const xlsxRead = (file, cb) => {
 };
 const numOf = (v) => { const n = parseFloat(String(v).replace(/\s/g, "").replace(",", ".")); return isNaN(n) ? 0 : n; };
 const pick = (row, keys) => { for (const k of keys) { for (const rk of Object.keys(row)) { if (rk.toLowerCase().trim() === k.toLowerCase()) return row[rk]; } } return ""; };
+const compressImage = (file, maxDim, quality) => new Promise((res) => {
+  try {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const M = maxDim || 1100;
+      if (w > h && w > M) { h = Math.round(h * M / w); w = M; }
+      else if (h >= w && h > M) { w = Math.round(w * M / h); h = M; }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      try { res(c.toDataURL("image/jpeg", quality || 0.6)); } catch (e) { res(null); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  } catch (e) { res(null); }
+});
+const fileToDataURL = (file) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(file); });
 
 
 const KARATS = [24, 22, 21, 18, 14];
@@ -889,6 +908,113 @@ function PinSetModal({ hasPin, onClose, onSave, onRemove }) {
       {err && <p className="lock-err">{err}</p>}
       <p className="muted small" style={{ marginTop: 4 }}>En cas d'oubli, tu pourras déverrouiller avec le mot de passe de ton compte.</p>
     </Modal>
+  );
+}
+
+function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }) {
+  const [text, setText] = useState("");
+  const [lightbox, setLightbox] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [recSec, setRecSec] = useState(0);
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  const listRef = useRef(null);
+  const imgRef = useRef(null);
+  const fileRef = useRef(null);
+  const recRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const timerRef = useRef(null);
+  const sorted = [...messages].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages.length]);
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  const submitText = () => { const t = text.trim(); if (!t) return; onSend({ text: t }); setText(""); };
+  const pickImage = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const data = await compressImage(f, 1100, 0.6);
+    if (data) onSend({ image: data }); else onNotice && onNotice("Image illisible.", "Messagerie");
+  };
+  const pickFile = async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (f.size > 1.5 * 1024 * 1024) { onNotice && onNotice("Document trop volumineux (max 1,5 Mo). Pour un gros fichier, partage plutôt un lien.", "Document"); return; }
+    const data = await fileToDataURL(f);
+    if (data) onSend({ file: { name: f.name, type: f.type, data } }); else onNotice && onNotice("Document illisible.", "Document");
+  };
+  const startRec = async () => {
+    if (recording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunksRef.current.push(ev.data); };
+      mr.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+        if (blob.size > 0) { const data = await fileToDataURL(blob); if (data) onSend({ audio: data }); }
+      };
+      mr.start(); recRef.current = mr; setRecording(true); setRecSec(0);
+      timerRef.current = setInterval(() => setRecSec((s) => (s >= 60 ? (stopRec(), s) : s + 1)), 1000);
+    } catch (e) { onNotice && onNotice("Micro indisponible ou refusé. Autorise le micro dans ton navigateur pour envoyer un vocal.", "Message vocal"); }
+  };
+  const stopRec = () => { if (recRef.current && recording) { try { recRef.current.stop(); } catch (e) { /* */ } setRecording(false); } if (timerRef.current) clearInterval(timerRef.current); };
+  const cancelRec = () => { if (recRef.current) { recRef.current.onstop = () => { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); }; try { recRef.current.stop(); } catch (e) { /* */ } } setRecording(false); if (timerRef.current) clearInterval(timerRef.current); };
+  const askNotif = () => { if (typeof Notification === "undefined") return; Notification.requestPermission().then((p) => setNotifPerm(p)); };
+  const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return (
+    <>
+      <button className="chat-fab" onClick={onToggle} aria-label="Messagerie">
+        {open ? <X size={22} /> : <MessageCircle size={24} />}
+        {!open && unread > 0 && <span className="chat-badge">{unread > 9 ? "9+" : unread}</span>}
+      </button>
+      {open && (
+        <div className="chat-panel">
+          <div className="chat-head">
+            <MessageCircle size={16} /> <strong>Messagerie</strong> <span className="muted small">équipe</span>
+            {notifPerm === "default" && <button className="chat-notif" onClick={askNotif} title="Activer les notifications">🔔 Activer</button>}
+          </div>
+          <div className="chat-list" ref={listRef}>
+            {sorted.length === 0
+              ? <p className="muted small chat-empty">Aucun message pour l'instant.<br />Écris, ou envoie une photo, un vocal ou un document.</p>
+              : sorted.map((m) => {
+                const mine = m.userId === myId;
+                return (
+                  <div key={m.id} className={`chat-msg ${mine ? "mine" : ""}`}>
+                    {!mine && <span className="chat-name">{m.by}{m.role === "patron" ? " · patron" : ""}</span>}
+                    <div className="chat-bubble">
+                      {m.image && <img className="chat-img" src={m.image} alt="" onClick={() => setLightbox(m.image)} />}
+                      {m.audio && <audio className="chat-audio" controls src={m.audio} />}
+                      {m.file && <a className="chat-file" href={m.file.data} download={m.file.name}>📎 {m.file.name}</a>}
+                      {m.text && <span className="chat-txt">{m.text}</span>}
+                    </div>
+                    <span className="chat-time">{m.time}</span>
+                  </div>
+                );
+              })}
+          </div>
+          {recording ? (
+            <div className="chat-rec">
+              <span className="rec-dot" /><span className="rec-time">{fmtSec(recSec)}</span>
+              <span className="muted small" style={{ flex: 1 }}>Enregistrement…</span>
+              <button className="btn btn-ghost btn-xs" onClick={cancelRec}>Annuler</button>
+              <button className="chat-send" onClick={stopRec} aria-label="Envoyer le vocal"><Send size={18} /></button>
+            </div>
+          ) : (
+            <div className="chat-input">
+              <button className="chat-icon" onClick={() => imgRef.current && imgRef.current.click()} title="Photo" aria-label="Photo">📷</button>
+              <button className="chat-icon" onClick={() => fileRef.current && fileRef.current.click()} title="Document" aria-label="Document">📎</button>
+              <button className="chat-icon" onClick={startRec} title="Message vocal" aria-label="Vocal">🎤</button>
+              <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Message…" onKeyDown={(e) => e.key === "Enter" && submitText()} />
+              <button className="chat-send" onClick={submitText} disabled={!text.trim()} aria-label="Envoyer"><Send size={18} /></button>
+              <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickImage} />
+              <input ref={fileRef} type="file" style={{ display: "none" }} onChange={pickFile} />
+            </div>
+          )}
+        </div>
+      )}
+      {lightbox && <div className="chat-lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>}
+    </>
   );
 }
 
@@ -2393,6 +2519,9 @@ export default function App() {
   const [payments, setPayments] = useState(seedPayments);
   const [expenses, setExpenses] = useState(seedExpenses);
   const [journal, setJournal] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSeen, setChatSeen] = useState(0);
   const [users, setUsers] = useState(seedUsers);
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
@@ -2527,6 +2656,7 @@ export default function App() {
           if (d.payments) setPayments(d.payments);
           if (d.expenses) setExpenses(d.expenses);
           if (d.journal) setJournal(d.journal);
+          if (d.messages) setMessages(d.messages);
           if (d.users && d.users.length) setUsers(d.users);
           if (d.settings) {
             setPrime(d.settings.prime ?? 3);
@@ -2602,6 +2732,7 @@ export default function App() {
       try {
         const p = await STORE.get("atelierdor:pin"); if (p) setPin(JSON.parse(p));
         const ld = await STORE.get("atelierdor:lockdelay"); if (ld != null && ld !== "") setLockDelay(parseInt(ld) || 0);
+        const cs = await STORE.get("atelierdor:chatseen"); if (cs) setChatSeen(parseInt(cs) || 0);
       } catch (e) { /* */ }
       finally { setLicReady(true); }
     })();
@@ -2615,13 +2746,13 @@ export default function App() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await STORE.set("atelierdor:data", JSON.stringify({
-        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, users,
+        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, users,
         settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
       }));
       setSaveState(ok ? "saved" : "error");
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   // ---- détection de la connexion : signale vite, et relance la synchro au retour ----
   useEffect(() => {
@@ -2658,7 +2789,7 @@ export default function App() {
     if (typeof d.resellerPhone === "string") setResellerPhone(d.resellerPhone);
   };
 
-  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal };
+  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal, messages: setMessages };
 
   // remplace tout le local par la version serveur (adoption d'une boutique sur un nouvel appareil)
   const hydrateFromServer = (rows) => {
@@ -2780,7 +2911,7 @@ export default function App() {
     if (!currentUser || !currentUser.shopId) return;
     if (!dataReady) return;
     const shopId = currentUser.shopId;
-    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal };
+    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
     const t = setTimeout(async () => {
       if (typeof navigator !== "undefined" && navigator.onLine === false) { setSyncState("offline"); return; }
@@ -2815,7 +2946,7 @@ export default function App() {
       } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = () => ask({ title: "Tout réinitialiser ?", message: "Toutes les données seront effacées et remplacées par les exemples. Cette action est définitive.", danger: true, okLabel: "Réinitialiser", onOk: async () => {
     await STORE.del("atelierdor:data");
@@ -2836,6 +2967,33 @@ export default function App() {
     reset();
     return () => { clearTimeout(timer); if (typeof window !== "undefined") evs.forEach((e) => window.removeEventListener(e, reset)); };
   }, [pin, pinOk, lockDelay]);
+
+  // marque les messages comme lus quand le chat est ouvert (et à l'arrivée de nouveaux)
+  useEffect(() => { if (chatOpen) markChatSeen(); }, [chatOpen, messages.length]);
+
+  // notifications (son + navigateur) à la réception d'un message d'un autre
+  const notifInit = useRef(false);
+  const notifTsRef = useRef(0);
+  useEffect(() => {
+    if (!currentUser || !messages.length) return;
+    const maxTs = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0);
+    if (!notifInit.current) { notifInit.current = true; notifTsRef.current = maxTs; return; }
+    const incoming = messages.filter((m) => m.userId !== currentUser.id && (m.ts || 0) > notifTsRef.current);
+    notifTsRef.current = maxTs;
+    if (!incoming.length) return;
+    const last = [...incoming].sort((a, b) => (a.ts || 0) - (b.ts || 0)).pop();
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (!chatOpen || hidden) {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) { const ac = new Ctx(); const o = ac.createOscillator(); const gn = ac.createGain(); o.connect(gn); gn.connect(ac.destination); o.type = "sine"; o.frequency.value = 660; gn.gain.setValueAtTime(0.0001, ac.currentTime); gn.gain.exponentialRampToValueAtTime(0.18, ac.currentTime + 0.02); gn.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.3); o.start(); o.stop(ac.currentTime + 0.32); o.onended = () => ac.close(); }
+      } catch (e) { /* */ }
+    }
+    if (hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const body = last.text || (last.image ? "📷 Photo" : last.audio ? "🎤 Message vocal" : last.file ? ("📎 " + (last.file.name || "Document")) : "Nouveau message");
+      try { new Notification(`${last.by} · ${shop.name || "Atelier d'Or"}`, { body }); } catch (e) { /* */ }
+    }
+  }, [messages]);
 
   const perGram24 = (spot / OZ) * rate;
   const prices = useMemo(() => {
@@ -2894,6 +3052,19 @@ export default function App() {
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
+  const sendMessage = (payload) => {
+    if (!currentUser) return;
+    const p = typeof payload === "string" ? { text: payload } : (payload || {});
+    const text = (p.text || "").trim();
+    if (!text && !p.image && !p.audio && !p.file) return;
+    const msg = { id: uid(), userId: currentUser.id, by: me(), role: currentUser.role, date: TODAY, time: nowTime(), ts: Date.now() };
+    if (text) msg.text = text;
+    if (p.image) msg.image = p.image;
+    if (p.audio) msg.audio = p.audio;
+    if (p.file) msg.file = p.file;
+    setMessages((arr) => [...arr, msg].slice(-500));
+  };
+  const markChatSeen = () => { const last = messages.reduce((mx, m) => Math.max(mx, m.ts || 0), 0); setChatSeen(last); try { STORE.set("atelierdor:chatseen", String(last)); } catch (e) { /* */ } };
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
   const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
@@ -3155,7 +3326,7 @@ export default function App() {
       <div className="kpis">
         <Kpi icon={Coins} label="Valeur du stock or" value={fcfa(m.stockOrValue)} sub={`${g(m.stockOrWeight)} · au cours du jour`} tone="gold" />
         <Kpi icon={Wallet} label="Trésorerie" value={fcfa(m.tresorerie)} sub="caisse + mobile money" tone="green" />
-        <Kpi icon={TrendingUp} label="Ventes du jour" value={fcfa(m.ventesJour)} sub={`Bénéfice cumulé ${fcfa(m.beneficeVentes)}`} tone="gold" />
+        <Kpi icon={TrendingUp} label="Ventes du jour" value={fcfa(m.ventesJour)} sub={isPatron ? `Bénéfice cumulé ${fcfa(m.beneficeVentes)}` : "chiffre d'affaires du jour"} tone="gold" />
         <Kpi icon={TrendingDown} label="Achats du jour" value={fcfa(m.achatsJour)} sub="rachats clients" tone="clay" />
       </div>
       <div className="row2">
@@ -3245,7 +3416,7 @@ export default function App() {
           </div>
         </div>
         <table className="table fit">
-          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="hide-sm">Vendeur</th><th className="hide-sm">Paiement</th><th className="r hide-sm">Marge</th><th className="r">Total</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="hide-sm">Vendeur</th><th className="hide-sm">Paiement</th>{isPatron && <th className="r hide-sm">Marge</th>}<th className="r">Total</th><th></th></tr></thead>
           <tbody>
             {list.map((s) => {
               const bal = balanceFor(s);
@@ -3257,10 +3428,10 @@ export default function App() {
                 <td className="hide-sm">{clientCell(s.client)}</td>
                 <td className="muted hide-sm">{s.by || "—"}</td>
                 <td className="muted hide-sm">{s.pay}</td>
-                <td className="r num hide-sm">{fcfa(s.total - s.cost)}</td>
+                {isPatron && <td className="r num hide-sm">{fcfa(s.total - s.cost)}</td>}
                 <td className="r num pos">{fcfa(s.total)}</td>
                 <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
-                  {!s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
+                  {isPatron && !s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
                   <button className="icon-btn" title="Voir le reçu" onClick={() => setReceipt(buildReceipt(s))}><Receipt size={15} /></button>
                 </div></td>
               </tr>
@@ -3399,7 +3570,7 @@ export default function App() {
           <div className="ch-kpis">
             <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty}</strong></div>
             <div className="ch-kpi"><span>Vendu (total)</span><strong className="num pos">{fcfa(sold)}</strong></div>
-            <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>
+            {isPatron && <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>}
             <div className="ch-kpi"><span>En stock depuis</span><strong>{daysInStock(item) != null ? `${daysInStock(item)} j` : "—"}</strong></div>
           </div>
           <h4 className="ch-h">Entrée</h4>
@@ -3491,7 +3662,7 @@ export default function App() {
                   <td className="r num">{fcfa(it.weight * it.qty * prices[it.karat].vente)}</td>
                   <td className="r"><div className="rowbtns">
                     <button className="icon-btn" onClick={() => setModal({ type: "gold", data: it })}><Pencil size={15} /></button>
-                    <button className="icon-btn" onClick={() => del(setGold, it.id, "stock", `${it.desc || it.type || "Or"}${it.karat ? " · " + it.karat + "K" : ""}`)}><Trash2 size={15} /></button>
+                    {isPatron && <button className="icon-btn" onClick={() => del(setGold, it.id, "stock", `${it.desc || it.type || "Or"}${it.karat ? " · " + it.karat + "K" : ""}`)}><Trash2 size={15} /></button>}
                   </div></td>
                 </tr>
               ))}
@@ -3520,19 +3691,19 @@ export default function App() {
             </div>
           </div>
           <table className="table">
-            <thead><tr><th>Désignation</th><th>Catégorie</th><th className="r">Qté</th><th className="r">Coût</th><th className="r">Vente</th><th className="r">Marge u.</th><th></th></tr></thead>
+            <thead><tr><th>Désignation</th><th>Catégorie</th><th className="r">Qté</th>{isPatron && <th className="r">Coût</th>}<th className="r">Vente</th>{isPatron && <th className="r">Marge u.</th>}<th></th></tr></thead>
             <tbody>
               {divers.map((it) => (
                 <tr key={it.id} className={it.qty <= it.min ? "warn-row" : ""}>
                   <td><div className="prod-cell">{it.photo ? <img className="prod-thumb" src={it.photo} alt="" /> : <span className="prod-thumb ph">📷</span>}<button className="name-link" onClick={() => setProductView({ kind: "divers", item: it })}>{it.name}</button></div>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
                   <td className="muted">{it.cat}</td>
                   <td className="r num">{it.qty} {it.unit}</td>
-                  <td className="r num">{fcfa(it.cost)}</td>
+                  {isPatron && <td className="r num">{fcfa(it.cost)}</td>}
                   <td className="r num">{fcfa(it.price)}</td>
-                  <td className="r num">{fcfa(it.price - it.cost)}</td>
+                  {isPatron && <td className="r num">{fcfa(it.price - it.cost)}</td>}
                   <td className="r"><div className="rowbtns">
                     <button className="icon-btn" onClick={() => setModal({ type: "divers", data: it })}><Pencil size={15} /></button>
-                    <button className="icon-btn" onClick={() => del(setDivers, it.id, "stock", it.name)}><Trash2 size={15} /></button>
+                    {isPatron && <button className="icon-btn" onClick={() => del(setDivers, it.id, "stock", it.name)}><Trash2 size={15} /></button>}
                   </div></td>
                 </tr>
               ))}
@@ -3583,7 +3754,7 @@ export default function App() {
               </div>
               <div className="rowbtns">
                 <button className="icon-btn" onClick={() => setModal({ type: "client", data: c })}><Pencil size={15} /></button>
-                <button className="icon-btn" onClick={() => del(setClients, c.id, "client", c.name)}><Trash2 size={15} /></button>
+                {isPatron && <button className="icon-btn" onClick={() => del(setClients, c.id, "client", c.name)}><Trash2 size={15} /></button>}
               </div>
             </div>
           );
@@ -3814,7 +3985,7 @@ export default function App() {
         <div className="kpis">
           <Kpi icon={TrendingDown} label="Dépenses ce mois-ci" value={fcfa(moisTotal)} sub="charges du mois en cours" tone="clay" />
           <Kpi icon={Receipt} label="Dépenses cumulées" value={fcfa(total)} sub={`${expenses.length} dépense(s)`} tone="clay" />
-          <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(m.beneficeNet)} sub={`Marge brute ${fcfa(m.beneficeVentes)}`} tone="green" />
+          {isPatron && <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(m.beneficeNet)} sub={`Marge brute ${fcfa(m.beneficeVentes)}`} tone="green" />}
         </div>
         <div className="card">
           <div className="card-head">
@@ -3841,7 +4012,7 @@ export default function App() {
                     <td className="r num neg">−{fcfa(e.amount)}</td>
                     <td className="r"><div className="rowbtns">
                       <button className="icon-btn" onClick={() => setModal({ type: "expense", data: e })}><Pencil size={15} /></button>
-                      <button className="icon-btn" onClick={() => del(setExpenses, e.id, "depense", `${e.label} · ${fcfa(e.amount)}`)}><Trash2 size={15} /></button>
+                      {isPatron && <button className="icon-btn" onClick={() => del(setExpenses, e.id, "depense", `${e.label} · ${fcfa(e.amount)}`)}><Trash2 size={15} /></button>}
                     </div></td>
                   </tr>
                 ))}
@@ -4248,6 +4419,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
+  const chatUnread = messages.filter((m) => (m.ts || 0) > chatSeen && m.userId !== currentUser.id).length;
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
   const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
 
@@ -4382,7 +4554,7 @@ export default function App() {
             <div className="data-actions" style={{ marginTop: 14, marginBottom: 0 }}>
               <button className="btn btn-line" onClick={() => { setHistory(null); setReceipt(buildReceipt(isSale ? it : { ...it, paid: purchasePaidFor(it.id), kind: "purchase" })); }}>{isSale ? "Voir le reçu" : "Bordereau"}</button>
               {isSale && bal > 0 && <button className="btn btn-gold" onClick={() => { setHistory(null); setAcompteFor(it); }}>Encaisser</button>}
-              {isSale && !it.returned && <button className="btn btn-clay" onClick={() => { setHistory(null); setReturnFor(it); }}>Retour</button>}
+              {isPatron && isSale && !it.returned && <button className="btn btn-clay" onClick={() => { setHistory(null); setReturnFor(it); }}>Retour</button>}
               {!isSale && bal > 0 && <button className="btn btn-clay" onClick={() => { setHistory(null); setSettleFor(it); }}>Solder</button>}
             </div>
           </Modal>
@@ -4390,6 +4562,7 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
+      <ChatWidget messages={messages} myId={currentUser.id} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} unread={chatUnread} onNotice={notify} />
     </div>
   );
 }
@@ -4910,6 +5083,42 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .shake { animation:shake .4s; }
 @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
 .lock-delay { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
+.chat-fab { position:fixed; right:22px; bottom:22px; width:60px; height:60px; border-radius:50%; border:none; background:linear-gradient(150deg,var(--gold),var(--gold2,#9a6f1f)); color:#fff; box-shadow:0 8px 24px rgba(184,134,47,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:70; transition:transform .15s, box-shadow .15s; }
+.chat-fab:hover { transform:translateY(-2px) scale(1.04); box-shadow:0 12px 30px rgba(184,134,47,.55); }
+.chat-fab:active { transform:scale(.96); }
+.chat-badge { position:absolute; top:-2px; right:-2px; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--clay); color:#fff; font-size:.72rem; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid var(--paper); }
+.chat-panel { position:fixed; right:22px; bottom:94px; width:360px; max-width:calc(100vw - 32px); height:520px; max-height:calc(100vh - 130px); background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 50px rgba(28,22,17,.28); display:flex; flex-direction:column; overflow:hidden; z-index:70; animation:chatpop .18s ease-out; }
+@keyframes chatpop { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
+.chat-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--line); color:var(--ink); background:var(--gold-soft); }
+.chat-head strong { font-size:1rem; }
+.chat-list { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }
+.chat-empty { text-align:center; margin:auto; line-height:1.6; }
+.chat-msg { display:flex; flex-direction:column; align-items:flex-start; max-width:82%; }
+.chat-msg.mine { align-self:flex-end; align-items:flex-end; }
+.chat-name { font-size:.72rem; font-weight:700; color:var(--gold); margin:0 0 2px 4px; }
+.chat-bubble { padding:9px 13px; border-radius:16px; background:var(--card); border:1px solid var(--line); color:var(--ink); font-size:.92rem; line-height:1.4; border-bottom-left-radius:4px; word-break:break-word; white-space:pre-wrap; }
+.chat-msg.mine .chat-bubble { background:var(--gold); color:#fff; border-color:var(--gold); border-bottom-left-radius:16px; border-bottom-right-radius:4px; }
+.chat-time { font-size:.68rem; color:var(--muted); margin:2px 6px 0; }
+.chat-input { display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+.chat-input .input { flex:1; }
+.chat-send { width:44px; flex-shrink:0; border:none; border-radius:12px; background:var(--gold); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.12s; }
+.chat-send:hover:not(:disabled) { background:var(--gold2,#9a6f1f); }
+.chat-send:disabled { opacity:.4; cursor:default; }
+.chat-icon { width:38px; height:40px; flex-shrink:0; border:1px solid var(--line); border-radius:11px; background:var(--card); cursor:pointer; font-size:1.05rem; display:flex; align-items:center; justify-content:center; transition:.12s; }
+.chat-icon:hover { border-color:var(--gold); background:var(--gold-soft); }
+.chat-img { max-width:200px; max-height:220px; border-radius:10px; display:block; cursor:pointer; margin-bottom:2px; }
+.chat-audio { width:210px; max-width:100%; height:38px; }
+.chat-file { display:inline-flex; align-items:center; gap:6px; font-weight:600; color:var(--gold); text-decoration:none; word-break:break-all; }
+.chat-msg.mine .chat-file { color:#fff; text-decoration:underline; }
+.chat-txt { display:block; }
+.chat-bubble > .chat-img + .chat-txt, .chat-bubble > .chat-audio + .chat-txt, .chat-bubble > .chat-file + .chat-txt { margin-top:6px; }
+.chat-notif { margin-left:auto; border:1px solid var(--gold); background:var(--paper); color:var(--gold); border-radius:999px; padding:4px 10px; font-size:.74rem; font-weight:700; cursor:pointer; }
+.chat-notif:hover { background:var(--gold); color:#fff; }
+.chat-rec { display:flex; align-items:center; gap:10px; padding:12px; border-top:1px solid var(--line); }
+.rec-dot { width:12px; height:12px; border-radius:50%; background:var(--clay); animation:livedot 1s infinite; }
+.rec-time { font-variant-numeric:tabular-nums; font-weight:700; color:var(--ink); }
+.chat-lightbox { position:fixed; inset:0; background:rgba(28,22,17,.85); display:grid; place-items:center; z-index:90; padding:24px; cursor:zoom-out; }
+.chat-lightbox img { max-width:100%; max-height:100%; border-radius:12px; }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
