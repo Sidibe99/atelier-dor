@@ -3692,6 +3692,12 @@ export default function App() {
     const kindRev = { or: 0, bijoux: 0, divers: 0 };
     pSales.forEach((s) => { kindRev[s.kind === "divers" ? "divers" : (s.kind === "bijoux" ? "bijoux" : "or")] += s.total; });
     const pieData = [{ name: "Or", value: kindRev.or }, { name: "Bijoux", value: kindRev.bijoux }, { name: "Divers", value: kindRev.divers }].filter((d) => d.value > 0);
+    const pPays = payments.filter((p) => inPeriod(p.date, reportPeriod));
+    const vendMap = {};
+    const vAdd = (name) => { const k = name || "—"; if (!vendMap[k]) vendMap[k] = { name: k, nSales: 0, ca: 0, marge: 0, enc: 0 }; return vendMap[k]; };
+    pSales.forEach((s) => { const v = vAdd(s.by); v.nSales += 1; v.ca += s.total; v.marge += s.total - s.cost; });
+    pPays.forEach((p) => { vAdd(p.by).enc += p.amount; });
+    const byVend = Object.values(vendMap).sort((a, b) => b.ca - a.ca);
     const exportPeriode = () => xlsxExportG(`rapport-${reportPeriod}-${TODAY}.xlsx`, {
       "Ventes": pSales.map((s) => ({ Date: s.date, Heure: s.time || "", Produit: s.label, Client: s.client || "", Total: s.total, "Payé": s.total - balanceFor(s), Paiement: s.pay || "" })),
       "Achats": pPurch.map((p) => ({ Date: p.date, Heure: p.time || "", Carat: p.karat ? p.karat + "K" : "brut", "Poids (g)": p.weight, "Prix/g": p.ppg, Client: p.client || "", Total: p.total })),
@@ -3770,6 +3776,28 @@ export default function App() {
                     <td className="r num">{t.qty}</td>
                     <td className="r num pos">{fcfa(t.revenue)}</td>
                     <td className="r num">{fcfa(t.marge)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Performance par vendeur <span className="count">{byVend.length}</span></h3>
+            <span className="muted">{PERIOD_LABEL[reportPeriod].toLowerCase()}</span>
+          </div>
+          {byVend.length === 0 ? <p className="muted small">Aucune vente sur la période.</p> : (
+            <table className="table">
+              <thead><tr><th>Vendeur</th><th className="r">Ventes</th><th className="r">Chiffre d'affaires</th><th className="r">Bénéfice</th><th className="r">Encaissé</th></tr></thead>
+              <tbody>
+                {byVend.map((v, i) => (
+                  <tr key={i}>
+                    <td><strong>{i === 0 && v.ca > 0 ? "🏆 " : ""}{v.name}</strong></td>
+                    <td className="r num">{v.nSales}</td>
+                    <td className="r num pos">{fcfa(v.ca)}</td>
+                    <td className="r num">{fcfa(v.marge)}</td>
+                    <td className="r num">{fcfa(v.enc)}</td>
                   </tr>
                 ))}
               </tbody>
