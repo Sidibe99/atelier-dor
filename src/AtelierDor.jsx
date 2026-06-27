@@ -3965,7 +3965,7 @@ export default function App() {
   }
   const isPatron = currentUser.role === "patron";
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo"].includes(n.id));
-  const cur = navItems.some((n) => n.id === view) ? view : "dash";
+  const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
 
   return (
     <div className="app">
