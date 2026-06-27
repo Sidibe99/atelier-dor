@@ -3,7 +3,7 @@ import {
   LayoutGrid, ShoppingCart, ArrowDownLeft, Package, Users, BarChart3,
   Settings, Plus, X, Pencil, Trash2, Search, Coins, Scale, Gem, Wallet,
   TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer,
-  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator,
+  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -99,7 +99,7 @@ const planAllows = (plan, feature) => {
 };
 
 // tri d'une collection synchronisée (plus récent en premier), identique sur tous les appareils
-const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", gold: "added", divers: "added" };
+const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", journal: "date", gold: "added", divers: "added" };
 const cmpRecent = (k) => (a, b) => {
   const d = String((b && b[k]) || "").localeCompare(String((a && a[k]) || ""));
   if (d !== 0) return d;
@@ -2242,6 +2242,7 @@ export default function App() {
   const [modal, setModal] = useState(null);
   const [stockTab, setStockTab] = useState("or");
   const [reportPeriod, setReportPeriod] = useState("month");
+  const [journalKind, setJournalKind] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
   const [q, setQ] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -2258,6 +2259,7 @@ export default function App() {
   const [closures, setClosures] = useState(seedClosures);
   const [payments, setPayments] = useState(seedPayments);
   const [expenses, setExpenses] = useState(seedExpenses);
+  const [journal, setJournal] = useState([]);
   const [users, setUsers] = useState(seedUsers);
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
@@ -2382,6 +2384,7 @@ export default function App() {
           if (d.closures) setClosures(d.closures);
           if (d.payments) setPayments(d.payments);
           if (d.expenses) setExpenses(d.expenses);
+          if (d.journal) setJournal(d.journal);
           if (d.users && d.users.length) setUsers(d.users);
           if (d.settings) {
             setPrime(d.settings.prime ?? 3);
@@ -2466,13 +2469,13 @@ export default function App() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await STORE.set("atelierdor:data", JSON.stringify({
-        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users,
+        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, users,
         settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
       }));
       setSaveState(ok ? "saved" : "error");
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   // ---- détection de la connexion : signale vite, et relance la synchro au retour ----
   useEffect(() => {
@@ -2509,7 +2512,7 @@ export default function App() {
     if (typeof d.resellerPhone === "string") setResellerPhone(d.resellerPhone);
   };
 
-  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses };
+  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal };
 
   // remplace tout le local par la version serveur (adoption d'une boutique sur un nouvel appareil)
   const hydrateFromServer = (rows) => {
@@ -2631,7 +2634,7 @@ export default function App() {
     if (!currentUser || !currentUser.shopId) return;
     if (!dataReady) return;
     const shopId = currentUser.shopId;
-    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses };
+    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
     const t = setTimeout(async () => {
       if (typeof navigator !== "undefined" && navigator.onLine === false) { setSyncState("offline"); return; }
@@ -2666,7 +2669,7 @@ export default function App() {
       } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = async () => {
     if (!window.confirm("Effacer toutes les données enregistrées et revenir aux exemples ? Cette action est définitive.")) return;
@@ -2734,6 +2737,7 @@ export default function App() {
   /* ----------------------------- handlers ----------------------------- */
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
+  const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
   const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
@@ -2746,11 +2750,13 @@ export default function App() {
     setPayments((arr) => [{ id: uid(), saleId: rec.id, date: TODAY, time: rec.time, amount: s.paid != null ? s.paid : s.total, pay: s.pay, by: me() }, ...arr]);
     if ((s.kind === "or" || s.kind === "bijoux") && s.stockId) setGold((arr) => arr.map((it) => it.id === s.stockId ? { ...it, qty: Math.max(0, it.qty - 1) } : it));
     if (s.kind === "divers" && s.diversId) setDivers((arr) => arr.map((it) => it.id === s.diversId ? { ...it, qty: Math.max(0, it.qty - s.dQty) } : it));
+    log("vente", "Vente créée", `${s.label} · ${fcfa(s.total)}${s.client ? " · " + s.client : ""}`);
     setModal(null);
     setReceipt(buildReceipt(rec));
   };
   const recordPayment = (sale, { amount, pay }) => {
     setPayments((arr) => [{ id: uid(), saleId: sale.id, date: TODAY, time: nowTime(), amount, pay, by: me() }, ...arr]);
+    log("paiement", "Encaissement", `${fcfa(amount)} · ${sale.label}${sale.client ? " · " + sale.client : ""}`);
     setAcompteFor(null);
   };
   const addPurchase = (p) => {
@@ -2759,11 +2765,13 @@ export default function App() {
     setPurchases((arr) => [rec, ...arr]);
     setPurchasePayments((arr) => [{ id: uid(), purchaseId: rec.id, date: TODAY, time: rec.time, amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces", by: me() }, ...arr]);
     setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}`, karat: p.karat, weight: p.weight, qty: 1, cat: "or", origin: { from: "rachat", client: p.client || "", date: TODAY, price: p.total, purchaseId: rec.id } }, ...arr]);
+    log("achat", "Achat d'or créé", `${p.karat ? p.karat + "K" : "or brut"} · ${g(p.weight)} · ${fcfa(p.total)}${p.client ? " · " + p.client : ""}`);
     setModal(null);
     setReceipt(buildReceipt(rec));
   };
   const settlePurchase = (purchase, { amount, pay }) => {
     setPurchasePayments((arr) => [{ id: uid(), purchaseId: purchase.id, date: TODAY, time: nowTime(), amount, pay, by: me() }, ...arr]);
+    log("paiement", "Règlement d'un rachat", `${fcfa(amount)}${purchase.client ? " · " + purchase.client : ""}`);
     setSettleFor(null);
   };
   const recordReturn = (sale, { amount, pay, restock, motif }) => {
@@ -2773,12 +2781,13 @@ export default function App() {
       else if (sale.diversId) setDivers((arr) => arr.map((it) => it.id === sale.diversId ? { ...it, qty: it.qty + (sale.dQty || 1) } : it));
     }
     setSales((arr) => arr.map((s) => s.id === sale.id ? { ...s, returned: true } : s));
+    log("retour", "Retour de vente", `${sale.label}${amount > 0 ? " · remboursé " + fcfa(amount) : ""}`);
     setReturnFor(null);
   };
-  const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
-  const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); setModal(null); };
-  const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); setModal(null); };
-  const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); setModal(null); };
+  const saveGold = (it) => { setGold((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); log("stock", it.id ? "Article or modifié" : "Article or ajouté", `${it.desc || it.type || "Or"}${it.karat ? " · " + it.karat + "K" : ""}`); setModal(null); };
+  const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); log("stock", it.id ? "Article divers modifié" : "Article divers ajouté", `${it.name}${it.qty != null ? " · qté " + it.qty : ""}`); setModal(null); };
+  const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); log("client", it.id ? "Client modifié" : "Client ajouté", it.name || ""); setModal(null); };
+  const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); log("depense", it.id ? "Dépense modifiée" : "Dépense ajoutée", `${it.label || ""} · ${fcfa(it.amount || 0)}`); setModal(null); };
   const saveUser = (it) => {
     const f = license ? FORMULAS[license.plan] : null;
     if (f && !it.id) {
@@ -2800,11 +2809,13 @@ export default function App() {
       return [...arr, { id: uid(), name: it.name, email: it.email, role: it.role, salt, pwHash: hashPwd(it.password || "", salt) }];
     });
     if (currentUser && it.id === currentUser.id) setCurrentUser((p) => ({ ...p, name: it.name, email: it.email, role: it.role }));
+    log("user", it.id ? "Utilisateur modifié" : "Utilisateur créé", `${it.name || ""} (${it.role === "patron" ? "patron" : "vendeur"})`);
     setModal(null);
   };
   const delUser = (id) => {
     if (users.length <= 1) { window.alert("Il faut garder au moins un utilisateur."); return; }
-    if (window.confirm("Supprimer cet employé ?")) setUsers((arr) => arr.filter((x) => x.id !== id));
+    const u = users.find((x) => x.id === id);
+    if (window.confirm("Supprimer cet employé ?")) { setUsers((arr) => arr.filter((x) => x.id !== id)); log("user", "Utilisateur supprimé", u ? u.name : ""); }
   };
   const login = (u) => { setCurrentUser(u); setView("dash"); try { STORE.set("atelierdor:session", u.id); } catch (e) { /* */ } };
   const logout = () => {
@@ -2878,7 +2889,7 @@ export default function App() {
     setBackup(null);
     window.alert("Sauvegarde importée. Toutes les données ont été restaurées.");
   };
-  const del = (setter, id) => { if (window.confirm("Supprimer cet élément ?")) setter((arr) => arr.filter((x) => x.id !== id)); };
+  const del = (setter, id, kind, label) => { if (window.confirm("Supprimer cet élément ?")) { setter((arr) => arr.filter((x) => x.id !== id)); if (kind) log(kind, "Suppression", label || ""); } };
 
   /* ------------------------------- vues ------------------------------- */
   const NAV = [
@@ -2891,6 +2902,7 @@ export default function App() {
     { id: "caisse", label: "Clôture de caisse", icon: Banknote },
     { id: "depenses", label: "Dépenses", icon: TrendingDown },
     { id: "reports", label: "Rapports", icon: BarChart3 },
+    { id: "journal", label: "Historique", icon: History },
     { id: "cours", label: "Cours de l'or", icon: Coins },
     { id: "calc", label: "Calculatrice", icon: Calculator },
     { id: "settings", label: "Paramètres", icon: Settings },
@@ -3318,7 +3330,7 @@ export default function App() {
                   <td className="r num">{fcfa(it.weight * it.qty * prices[it.karat].vente)}</td>
                   <td className="r"><div className="rowbtns">
                     <button className="icon-btn" onClick={() => setModal({ type: "gold", data: it })}><Pencil size={15} /></button>
-                    <button className="icon-btn" onClick={() => del(setGold, it.id)}><Trash2 size={15} /></button>
+                    <button className="icon-btn" onClick={() => del(setGold, it.id, "stock", `${it.desc || it.type || "Or"}${it.karat ? " · " + it.karat + "K" : ""}`)}><Trash2 size={15} /></button>
                   </div></td>
                 </tr>
               ))}
@@ -3359,7 +3371,7 @@ export default function App() {
                   <td className="r num">{fcfa(it.price - it.cost)}</td>
                   <td className="r"><div className="rowbtns">
                     <button className="icon-btn" onClick={() => setModal({ type: "divers", data: it })}><Pencil size={15} /></button>
-                    <button className="icon-btn" onClick={() => del(setDivers, it.id)}><Trash2 size={15} /></button>
+                    <button className="icon-btn" onClick={() => del(setDivers, it.id, "stock", it.name)}><Trash2 size={15} /></button>
                   </div></td>
                 </tr>
               ))}
@@ -3410,7 +3422,7 @@ export default function App() {
               </div>
               <div className="rowbtns">
                 <button className="icon-btn" onClick={() => setModal({ type: "client", data: c })}><Pencil size={15} /></button>
-                <button className="icon-btn" onClick={() => del(setClients, c.id)}><Trash2 size={15} /></button>
+                <button className="icon-btn" onClick={() => del(setClients, c.id, "client", c.name)}><Trash2 size={15} /></button>
               </div>
             </div>
           );
@@ -3506,6 +3518,7 @@ export default function App() {
     const cloturer = () => {
       const c = { id: uid(), date: TODAY, time: nowTime(), by: me(), fond: fondCaisse, esp, wave, om, vir, caTotal: encTotal, rachats, depenses, theorique, compte, ecart };
       setClosures((arr) => [c, ...arr]);
+      log("caisse", "Clôture de caisse", `Théorique ${fcfa(theorique)} · Compté ${fcfa(compte)} · Écart ${fcfa(ecart)}`);
       setCompteCaisse("");
       setZView(c);
     };
@@ -3666,7 +3679,7 @@ export default function App() {
                     <td className="r num neg">−{fcfa(e.amount)}</td>
                     <td className="r"><div className="rowbtns">
                       <button className="icon-btn" onClick={() => setModal({ type: "expense", data: e })}><Pencil size={15} /></button>
-                      <button className="icon-btn" onClick={() => del(setExpenses, e.id)}><Trash2 size={15} /></button>
+                      <button className="icon-btn" onClick={() => del(setExpenses, e.id, "depense", `${e.label} · ${fcfa(e.amount)}`)}><Trash2 size={15} /></button>
                     </div></td>
                   </tr>
                 ))}
@@ -3831,6 +3844,43 @@ export default function App() {
     );
   };
 
+  const renderJournal = () => {
+    const JKIND = { vente: { label: "Vente", cls: "pill-gold" }, achat: { label: "Achat", cls: "pill-clay" }, paiement: { label: "Paiement", cls: "pill-green" }, retour: { label: "Retour", cls: "pill-red" }, caisse: { label: "Caisse", cls: "pill-green" }, stock: { label: "Stock", cls: "pill-ink" }, client: { label: "Client", cls: "pill-ink" }, depense: { label: "Dépense", cls: "pill-clay" }, user: { label: "Utilisateur", cls: "pill-amber" } };
+    const kinds = [["all", "Tout"], ["vente", "Ventes"], ["achat", "Achats"], ["paiement", "Paiements"], ["caisse", "Caisse"], ["stock", "Stock"], ["client", "Clients"], ["depense", "Dépenses"], ["user", "Utilisateurs"]];
+    const ql = q.toLowerCase();
+    const list = journal.filter((j) => (journalKind === "all" || j.kind === journalKind) && (`${j.verb || ""} ${j.detail || ""} ${j.by || ""}`).toLowerCase().includes(ql));
+    return (
+      <>
+        <div className="card">
+          <div className="card-head">
+            <h3>Historique des actions <span className="count">{list.length}</span></h3>
+            <button className="btn btn-line" onClick={() => xlsxExportG(`historique-${TODAY}.xlsx`, { Historique: list.map((j) => ({ Date: j.date, Heure: j.time, Utilisateur: j.by, Type: (JKIND[j.kind] || {}).label || j.kind, Action: j.verb, "Détail": j.detail })) })}><Download size={15} /> Excel</button>
+          </div>
+          <div className="jfilter">
+            {kinds.map(([k, lbl]) => <button key={k} className={`chip ${journalKind === k ? "chip-on" : ""}`} onClick={() => setJournalKind(k)}>{lbl}</button>)}
+          </div>
+          {list.length === 0 ? <p className="muted small">Aucune action enregistrée{journalKind !== "all" ? " pour ce filtre" : ""}.</p> : (
+            <div className="timeline jrnl">
+              {list.map((j) => (
+                <div key={j.id} className="tl-item">
+                  <div className="tl-dot" />
+                  <div className="tl-body">
+                    <div className="jrow">
+                      <span className={`pill ${(JKIND[j.kind] || {}).cls || "pill-ink"}`}>{(JKIND[j.kind] || {}).label || j.kind}</span>
+                      <strong>{j.verb}</strong>
+                      <span className="jdetail">{j.detail}</span>
+                    </div>
+                    <div className="jmeta">{j.by} · {dateFr(j.date)} {j.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  };
+
   const renderCours = () => (
     <>
       <div className="cours-hero">
@@ -3977,7 +4027,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} onUse={(type, data) => { if (type === "sale") { setView("sales"); setModal({ type: "sale", init: data }); } else { setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} onUse={(type, data) => { if (type === "sale") { setView("sales"); setModal({ type: "sale", init: data }); } else { setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -4015,7 +4065,7 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><ClientGate authUser={authUser} onSignOut={authSignOut} resellerPhone={resellerPhone} logo={shop.logo} onAuthorized={enterOnline} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo"].includes(n.id));
+  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
   const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
 
   return (
@@ -4649,6 +4699,14 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .alert-text { font-weight:600; color:var(--ink); font-size:.95rem; }
 .alert-sub { font-size:.8rem; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .alert-arr { color:var(--muted); font-weight:700; flex-shrink:0; }
+.jfilter { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.chip { padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--muted); font-size:.82rem; font-weight:600; cursor:pointer; transition:.15s; }
+.chip:hover { border-color:var(--gold); }
+.chip-on { background:var(--gold); color:#fff; border-color:var(--gold); }
+.jrnl .tl-body { padding-bottom:14px; }
+.jrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.jdetail { color:var(--ink); }
+.jmeta { font-size:.78rem; color:var(--muted); margin-top:3px; }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
