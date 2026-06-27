@@ -2006,6 +2006,9 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
               <div className={`shop-card ${needsAction ? "shop-flag" : ""}`} key={s.id}>
                 <div className="shop-main">
                   <div className="shop-name">{s.name}</div>
+                  {Array.isArray(s.name_history) && s.name_history.length > 0 && (
+                    <div className="shop-history">Anciens noms : {s.name_history.slice(-3).map((h) => h && h.name).filter(Boolean).join(" · ")}</div>
+                  )}
                   <div className="shop-meta">
                     <span className={`pill pill-${st.tone}`}>{st.label}</span>
                     {s.plan && FORMULAS[s.plan] && <span className="pill pill-plan">{FORMULAS[s.plan].name}</span>}
@@ -2620,6 +2623,31 @@ function FormulaModal({ req, onClose }) {
       <div className="req-msg">{req.msg}</div>
       {!req.hasPhone && <p className="muted small" style={{ marginTop: 10 }}>Aucun numéro de revendeur n'est encore enregistré : le bouton ouvrira WhatsApp et tu choisiras le contact. Tu peux aussi copier le message et l'envoyer toi-même.</p>}
     </Modal>
+  );
+}
+function PasswordChange() {
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const submit = async () => {
+    if (p1.length < 6) { setMsg({ err: true, t: "6 caractères minimum." }); return; }
+    if (p1 !== p2) { setMsg({ err: true, t: "Les deux mots de passe ne correspondent pas." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: p1 });
+      if (error) setMsg({ err: true, t: "Échec : " + (error.message || "réessaie plus tard.") });
+      else { setMsg({ err: false, t: "Mot de passe modifié avec succès." }); setP1(""); setP2(""); }
+    } catch (e) { setMsg({ err: true, t: "Connexion requise pour changer le mot de passe." }); }
+    setBusy(false);
+  };
+  return (
+    <div className="pwd-change">
+      <Field label="Nouveau mot de passe"><input className="input" type="password" value={p1} onChange={(e) => { setP1(e.target.value); setMsg(null); }} placeholder="6 caractères minimum" /></Field>
+      <Field label="Confirmer le mot de passe"><input className="input" type="password" value={p2} onChange={(e) => { setP2(e.target.value); setMsg(null); }} placeholder="Retape le mot de passe" /></Field>
+      {msg && <p className={`small ${msg.err ? "pwd-err" : "pwd-ok"}`} style={{ margin: "0 0 10px" }}>{msg.t}</p>}
+      <button className="btn btn-gold" onClick={submit} disabled={busy || !p1 || !p2}>{busy ? "Modification…" : "Changer mon mot de passe"}</button>
+    </div>
   );
 }
 export default function App() {
@@ -4436,6 +4464,11 @@ export default function App() {
     </>
   );
 
+  const syncShopName = async (nm) => {
+    const name = (nm || "").trim();
+    if (!name || !authUser) return;
+    try { await supabase.rpc("rename_my_shop", { new_name: name }); } catch (e) { /* hors-ligne ou non autorisé */ }
+  };
   const renderSettings = () => (
     <>
       <div className="card">
@@ -4465,12 +4498,21 @@ export default function App() {
       <div className="card">
         <div className="card-head"><h3><Receipt size={15} /> Boutique (en-tête des reçus)</h3><span className="muted">Apparaît en haut de chaque ticket</span></div>
         <Field label="Logo de la boutique"><LogoField logo={shop.logo} onChange={(v) => setShop((s) => ({ ...s, logo: v }))} /></Field>
-        <Field label="Nom de la boutique"><input className="input" value={shop.name} onChange={(e) => setShop((s) => ({ ...s, name: e.target.value }))} /></Field>
+        <Field label="Nom de la boutique"><input className="input" value={shop.name} onChange={(e) => setShop((s) => ({ ...s, name: e.target.value }))} onBlur={() => syncShopName(shop.name)} /></Field>
+        {authUser && <p className="muted small" style={{ margin: "-6px 0 4px" }}>Le nom est automatiquement mis à jour chez ton revendeur.</p>}
         <div className="manual" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
           <Field label="Adresse"><input className="input" value={shop.addr} onChange={(e) => setShop((s) => ({ ...s, addr: e.target.value }))} placeholder="ex : Marché Sandaga, Dakar" /></Field>
           <Field label="Téléphone"><input className="input" value={shop.phone} onChange={(e) => setShop((s) => ({ ...s, phone: e.target.value }))} placeholder="77 000 00 00" /></Field>
         </div>
       </div>
+
+      {authUser && (
+        <div className="card">
+          <div className="card-head"><h3><ShieldCheck size={15} /> Mon mot de passe</h3><span className="muted">Compte en ligne</span></div>
+          <p className="muted small" style={{ margin: "0 0 14px" }}>Change le mot de passe de connexion de ta boutique. Tu resteras connecté sur cet appareil.</p>
+          <PasswordChange />
+        </div>
+      )}
 
       <div className="card">
         <div className="card-head">
@@ -5338,4 +5380,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .pay-list { display:flex; flex-direction:column; gap:8px; }
 .pay-item { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
 .pay-amt { font-weight:700; color:var(--ink); }
+.pwd-err { color:var(--clay); font-weight:600; }
+.pwd-ok { color:var(--green); font-weight:600; }
+.shop-history { font-size:.74rem; color:var(--muted); margin:2px 0 6px; font-style:italic; }
 `;
