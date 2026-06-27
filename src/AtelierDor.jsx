@@ -3397,8 +3397,10 @@ export default function App() {
   );
 
   const renderCredits = () => {
-    const credits = sales.map((s) => ({ s, bal: balanceFor(s) })).filter((x) => x.bal > 0);
-    const dettes = purchases.map((p) => ({ p, bal: purchaseBalance(p) })).filter((x) => x.bal > 0);
+    const credits = sales.map((s) => ({ s, bal: balanceFor(s) })).filter((x) => x.bal > 0).sort((a, b) => String(a.s.date).localeCompare(String(b.s.date)));
+    const dettes = purchases.map((p) => ({ p, bal: purchaseBalance(p) })).filter((x) => x.bal > 0).sort((a, b) => String(a.p.date).localeCompare(String(b.p.date)));
+    const clientPhone = (name) => { const c = clients.find((x) => x.name === name); return c && c.phone ? String(c.phone).replace(/[^\d]/g, "") : ""; };
+    const remindCredit = (s, bal) => { const ph = clientPhone(s.client); if (!ph) return null; const msg = `Bonjour ${s.client || ""}, petit rappel : il reste ${fcfaLong(bal)} à régler sur votre achat (${s.label}) chez ${shop.name || "notre bijouterie"}. Merci !`; return `https://wa.me/${ph}?text=${encodeURIComponent(msg)}`; };
     return (
       <>
         <div className="kpis">
@@ -3422,7 +3424,10 @@ export default function App() {
                     <td className="r num">{fcfa(s.total)}</td>
                     <td className="r num">{fcfa(s.total - bal)}</td>
                     <td className="r num neg"><strong>{fcfa(bal)}</strong></td>
-                    <td className="r"><button className="btn btn-gold btn-xs" onClick={() => setAcompteFor(s)}>Encaisser</button></td>
+                    <td className="r"><div className="rowbtns">
+                      {remindCredit(s, bal) && <a className="btn btn-line btn-xs" href={remindCredit(s, bal)} target="_blank" rel="noreferrer">Rappel</a>}
+                      <button className="btn btn-gold btn-xs" onClick={() => setAcompteFor(s)}>Encaisser</button>
+                    </div></td>
                   </tr>
                 ))}
               </tbody>
