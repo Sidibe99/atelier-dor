@@ -811,6 +811,87 @@ function SalaryModal({ users, onClose, onSave }) {
   );
 }
 
+function PinScreen({ pin, email, onUnlock, onLogout, shopName, logo }) {
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(false);
+  const [recover, setRecover] = useState(false);
+  const [pw, setPw] = useState("");
+  const [recErr, setRecErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (val.length === pin.len) {
+      if (hashPwd(val, pin.salt) === pin.hash) onUnlock();
+      else { setErr(true); const t = setTimeout(() => { setVal(""); setErr(false); }, 550); return () => clearTimeout(t); }
+    }
+  }, [val]);
+  const press = (d) => setVal((v) => (v.length >= pin.len ? v : v + d));
+  const back = () => setVal((v) => v.slice(0, -1));
+  const tryRecover = async () => {
+    if (!pw || busy) return;
+    setBusy(true); setRecErr("");
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+      if (error) { setRecErr("Mot de passe incorrect."); setBusy(false); return; }
+      onUnlock();
+    } catch (e) { setRecErr("Connexion impossible. Vérifie ta connexion."); setBusy(false); }
+  };
+  return (
+    <div className="lock">
+      <div className="lock-brand"><BrandMark logo={logo} lg /><div className="lock-title">{shopName || "Atelier d'Or"}</div><div className="lock-sub">Code de sécurité</div></div>
+      {!recover ? (
+        <div className="pin-box">
+          <div className={`pin-dots ${err ? "shake" : ""}`}>
+            {Array.from({ length: pin.len }).map((_, i) => <span key={i} className={`pin-dot ${i < val.length ? "on" : ""}`} />)}
+          </div>
+          {err && <p className="lock-err" style={{ textAlign: "center" }}>Code incorrect</p>}
+          <div className="pin-pad">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => <button key={n} className="pin-key" onClick={() => press(String(n))}>{n}</button>)}
+            <span />
+            <button className="pin-key" onClick={() => press("0")}>0</button>
+            <button className="pin-key pin-back" onClick={back} aria-label="Effacer"><Delete size={20} /></button>
+          </div>
+          <button className="btn btn-ghost btn-xs" onClick={() => setRecover(true)}>Code oublié ?</button>
+        </div>
+      ) : (
+        <div className="pin-box">
+          <p className="muted small" style={{ textAlign: "center", maxWidth: 280 }}>Entre le mot de passe de ton compte pour déverrouiller.</p>
+          <input className="input" type="password" value={pw} onChange={(e) => { setPw(e.target.value); setRecErr(""); }} placeholder="Mot de passe du compte" onKeyDown={(e) => e.key === "Enter" && tryRecover()} />
+          {recErr && <p className="lock-err">{recErr}</p>}
+          <button className="btn btn-gold act-btn" disabled={busy} onClick={tryRecover}>{busy ? "Vérification…" : "Déverrouiller"}</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => { setRecover(false); setPw(""); setRecErr(""); }}>← Retour au code</button>
+        </div>
+      )}
+      <button className="btn btn-ghost btn-xs" style={{ marginTop: 14 }} onClick={onLogout}>Se déconnecter</button>
+    </div>
+  );
+}
+
+function PinSetModal({ hasPin, onClose, onSave, onRemove }) {
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [err, setErr] = useState("");
+  const valid = a.length >= 4 && a.length <= 6 && a === b;
+  const submit = () => {
+    if (a.length < 4) { setErr("Le code doit faire au moins 4 chiffres."); return; }
+    if (a !== b) { setErr("Les deux codes ne correspondent pas."); return; }
+    const salt = genSalt();
+    onSave({ salt, hash: hashPwd(a, salt), len: a.length });
+  };
+  return (
+    <Modal title={hasPin ? "Changer le code PIN" : "Définir un code PIN"} sub="Demandé à chaque ouverture de l'app sur cet appareil" onClose={onClose}
+      footer={<div className="foot-actions">
+        {hasPin && <button className="btn btn-clay" onClick={onRemove}>Retirer le code</button>}
+        <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+        <button className="btn btn-gold" disabled={!valid} onClick={submit}>Enregistrer</button>
+      </div>}>
+      <Field label="Nouveau code (4 à 6 chiffres)"><input className="input num" type="password" inputMode="numeric" maxLength={6} value={a} onChange={(e) => { setA(e.target.value.replace(/\D/g, "")); setErr(""); }} placeholder="••••" /></Field>
+      <Field label="Confirme le code"><input className="input num" type="password" inputMode="numeric" maxLength={6} value={b} onChange={(e) => { setB(e.target.value.replace(/\D/g, "")); setErr(""); }} placeholder="••••" /></Field>
+      {err && <p className="lock-err">{err}</p>}
+      <p className="muted small" style={{ marginTop: 4 }}>En cas d'oubli, tu pourras déverrouiller avec le mot de passe de ton compte.</p>
+    </Modal>
+  );
+}
+
 function UserModal({ item, onClose, onSave }) {
   const [f, setF] = useState(item ? { ...item, password: "" } : { name: "", role: "vendeur", password: "", email: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -2340,6 +2421,11 @@ export default function App() {
   const ask = (opts) => setConfirm(opts);
   const [notice, setNotice] = useState(null); // { title, message }
   const notify = (message, title) => setNotice({ message, title });
+  const [pin, setPin] = useState(null); // { salt, hash, len } | null — verrou local de l'appareil
+  const [pinOk, setPinOk] = useState(false); // déverrouillé pour cette session
+  const [lockDelay, setLockDelay] = useState(5); // minutes d'inactivité avant reverrouillage (0 = jamais)
+  const saveLockDelay = (min) => { setLockDelay(min); try { STORE.set("atelierdor:lockdelay", String(min)); } catch (e) { /* */ } };
+  const savePin = (cfg) => { setPin(cfg); try { if (cfg) STORE.set("atelierdor:pin", JSON.stringify(cfg)); else STORE.del("atelierdor:pin"); } catch (e) { /* */ } };
   const [fondCaisse, setFondCaisse] = useState(100000);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
@@ -2512,6 +2598,10 @@ export default function App() {
       } catch (e) { /* pas de licence */ }
       try {
         const t = await STORE.get("atelierdor:trialused"); if (t === "1") setTrialUsed(true);
+      } catch (e) { /* */ }
+      try {
+        const p = await STORE.get("atelierdor:pin"); if (p) setPin(JSON.parse(p));
+        const ld = await STORE.get("atelierdor:lockdelay"); if (ld != null && ld !== "") setLockDelay(parseInt(ld) || 0);
       } catch (e) { /* */ }
       finally { setLicReady(true); }
     })();
@@ -2735,6 +2825,17 @@ export default function App() {
     setPrime(3); setMVente(8); setMAchat(4); setFondCaisse(100000);
     setShop({ name: "Atelier d'Or", phone: "", addr: "Dakar, Sénégal" });
   } });
+
+  // verrouillage automatique après inactivité (si un PIN est défini)
+  useEffect(() => {
+    if (!pin || !pinOk || !lockDelay) return;
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => setPinOk(false), lockDelay * 60000); };
+    const evs = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+    if (typeof window !== "undefined") evs.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => { clearTimeout(timer); if (typeof window !== "undefined") evs.forEach((e) => window.removeEventListener(e, reset)); };
+  }, [pin, pinOk, lockDelay]);
 
   const perGram24 = (spot / OZ) * rate;
   const prices = useMemo(() => {
@@ -4011,6 +4112,24 @@ export default function App() {
       </div>
 
       <div className="card">
+        <div className="card-head"><h3><ShieldCheck size={15} /> Sécurité — Code PIN</h3><span className={`pill ${pin ? "pill-green" : "pill-ink"}`}>{pin ? "Activé" : "Désactivé"}</span></div>
+        <p className="muted small" style={{ margin: "0 0 14px" }}>Protège l'ouverture de l'app sur <strong>cet appareil</strong> par un code à 4-6 chiffres. En cas d'oubli, le mot de passe de ton compte permet de déverrouiller.</p>
+        <button className="btn btn-gold" onClick={() => setModal({ type: "pin" })}><ShieldCheck size={15} /> {pin ? "Changer ou retirer le code" : "Définir un code PIN"}</button>
+        {pin && (
+          <div className="lock-delay">
+            <span className="muted small">Verrouiller automatiquement après</span>
+            <select className="input" style={{ maxWidth: 200 }} value={lockDelay} onChange={(e) => saveLockDelay(parseInt(e.target.value))}>
+              <option value={1}>1 minute d'inactivité</option>
+              <option value={5}>5 minutes d'inactivité</option>
+              <option value={15}>15 minutes d'inactivité</option>
+              <option value={30}>30 minutes d'inactivité</option>
+              <option value={0}>Jamais (seulement à l'ouverture)</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
         <div className="card-head"><h3><Receipt size={15} /> Boutique (en-tête des reçus)</h3><span className="muted">Apparaît en haut de chaque ticket</span></div>
         <Field label="Logo de la boutique"><LogoField logo={shop.logo} onChange={(v) => setShop((s) => ({ ...s, logo: v }))} /></Field>
         <Field label="Nom de la boutique"><input className="input" value={shop.name} onChange={(e) => setShop((s) => ({ ...s, name: e.target.value }))} /></Field>
@@ -4125,6 +4244,9 @@ export default function App() {
   if (!onlineReady || !currentUser) {
     return (<div className="app"><style>{CSS}</style><ClientGate authUser={authUser} onSignOut={authSignOut} resellerPhone={resellerPhone} logo={shop.logo} onAuthorized={enterOnline} /></div>);
   }
+  if (pin && !pinOk) {
+    return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
+  }
   const isPatron = currentUser.role === "patron";
   const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
   const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
@@ -4202,6 +4324,7 @@ export default function App() {
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
       {modal?.type === "salary" && <SalaryModal users={users} onClose={() => setModal(null)} onSave={paySalary} />}
+      {modal?.type === "pin" && <PinSetModal hasPin={!!pin} onClose={() => setModal(null)} onSave={(cfg) => { savePin(cfg); setModal(null); notify("Code PIN enregistré. Il sera demandé à la prochaine ouverture.", "Sécurité"); }} onRemove={() => { savePin(null); setPinOk(true); setModal(null); notify("Code PIN retiré.", "Sécurité"); }} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
       {upsell && (
@@ -4775,6 +4898,18 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .jrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .jdetail { color:var(--ink); }
 .jmeta { font-size:.78rem; color:var(--muted); margin-top:3px; }
+.pin-box { display:flex; flex-direction:column; align-items:center; gap:14px; margin-top:18px; width:100%; max-width:300px; }
+.pin-dots { display:flex; gap:14px; }
+.pin-dot { width:14px; height:14px; border-radius:50%; border:2px solid var(--gold); background:transparent; transition:.15s; }
+.pin-dot.on { background:var(--gold); transform:scale(1.05); }
+.pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; width:100%; }
+.pin-key { height:62px; border-radius:16px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:1.5rem; font-weight:600; cursor:pointer; transition:.12s; display:flex; align-items:center; justify-content:center; }
+.pin-key:hover { border-color:var(--gold); background:var(--gold-soft); }
+.pin-key:active { transform:scale(.95); }
+.pin-back { color:var(--muted); font-size:1.1rem; }
+.shake { animation:shake .4s; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+.lock-delay { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
 .stat { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; text-align:center; }
 .stat-val { font-family:'Fraunces',serif; font-size:1.4rem; font-weight:700; color:var(--ink); }
 .stat-lab { font-size:.8rem; color:var(--muted); margin-top:4px; }
