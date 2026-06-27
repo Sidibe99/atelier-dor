@@ -68,6 +68,34 @@ const compressImage = (file, maxDim, quality) => new Promise((res) => {
   } catch (e) { res(null); }
 });
 const fileToDataURL = (file) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(file); });
+const compressImageBlob = (file, maxDim, quality) => new Promise((res) => {
+  try {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const M = maxDim || 1600;
+      if (w > h && w > M) { h = Math.round(h * M / w); w = M; }
+      else if (h >= w && h > M) { w = Math.round(w * M / h); h = M; }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      try { c.toBlob((b) => res(b), "image/jpeg", quality || 0.82); } catch (e) { res(null); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  } catch (e) { res(null); }
+});
+const signedUrlCache = {};
+const getSignedUrl = async (path) => {
+  if (signedUrlCache[path]) return signedUrlCache[path];
+  try {
+    const { data, error } = await supabase.storage.from("chat").createSignedUrl(path, 86400);
+    if (error || !data) return null;
+    signedUrlCache[path] = data.signedUrl;
+    return data.signedUrl;
+  } catch (e) { return null; }
+};
 
 
 const KARATS = [24, 22, 21, 18, 14];
@@ -116,6 +144,15 @@ const planAllows = (plan, feature) => {
   const allowed = FEATURE_PLANS[feature];
   return !allowed || allowed.includes(plan);
 };
+
+// Limites des médias du chat par formule (Mo pour image/fichier, secondes pour le vocal)
+const MEDIA_LIMITS = {
+  E: { img: 1.5, audioSec: 30, file: 2, storage: false },
+  S: { img: 1.5, audioSec: 30, file: 2, storage: false },
+  P: { img: 5, audioSec: 120, file: 15, storage: true },
+  R: { img: 15, audioSec: 300, file: 50, storage: true },
+};
+const mediaLimit = (plan) => MEDIA_LIMITS[plan] || MEDIA_LIMITS.S;
 
 // tri d'une collection synchronisée (plus récent en premier), identique sur tous les appareils
 const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", journal: "date", gold: "added", divers: "added" };
@@ -911,11 +948,29 @@ function PinSetModal({ hasPin, onClose, onSave, onRemove }) {
   );
 }
 
-function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }) {
+function ChatMedia({ media, kind, onImage }) {
+  const embedded = typeof media === "string" ? media : (media && media.data) || null;
+  const [url, setUrl] = useState(embedded);
+  useEffect(() => {
+    let alive = true;
+    if (!embedded && media && media.path) getSignedUrl(media.path).then((u) => { if (alive) setUrl(u); });
+    return () => { alive = false; };
+  }, [media]);
+  if (!url) return <span className="chat-loading">⏳ chargement…</span>;
+  if (kind === "image") return <img className="chat-img" src={url} alt="" onClick={() => onImage(url)} />;
+  if (kind === "audio") return <audio className="chat-audio" controls src={url} />;
+  if (kind === "file") return <a className="chat-file" href={url} target="_blank" rel="noreferrer" download={(media && media.name) || "fichier"}>📎 {(media && media.name) || "Document"}</a>;
+  return null;
+}
+
+function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice, limits, shopId, onUpsell }) {
+  const lim = limits || { img: 1.5, audioSec: 30, file: 2, storage: false };
+  const useStorage = !!(lim.storage && shopId);
   const [text, setText] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const [recording, setRecording] = useState(false);
   const [recSec, setRecSec] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const listRef = useRef(null);
   const imgRef = useRef(null);
@@ -927,19 +982,46 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }
   const sorted = [...messages].sort((a, b) => (a.ts || 0) - (b.ts || 0));
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages.length]);
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  const uploadToStorage = async (blob, ext, name) => {
+    try {
+      const path = `${shopId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from("chat").upload(path, blob, { contentType: blob.type || undefined, upsert: false });
+      if (error) return null;
+      return { path, name };
+    } catch (e) { return null; }
+  };
   const submitText = () => { const t = text.trim(); if (!t) return; onSend({ text: t }); setText(""); };
   const pickImage = async (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = "";
     if (!f) return;
-    const data = await compressImage(f, 1100, 0.6);
-    if (data) onSend({ image: data }); else onNotice && onNotice("Image illisible.", "Messagerie");
+    setBusy(true);
+    try {
+      if (useStorage) {
+        const blob = await compressImageBlob(f, 2000, 0.85);
+        if (!blob) { onNotice && onNotice("Image illisible.", "Photo"); return; }
+        const m = await uploadToStorage(blob, "jpg");
+        if (m) onSend({ image: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Photo");
+      } else {
+        const data = await compressImage(f, 1100, 0.6);
+        if (data) onSend({ image: data }); else onNotice && onNotice("Image illisible.", "Photo");
+      }
+    } finally { setBusy(false); }
   };
   const pickFile = async (e) => {
     const f = e.target.files && e.target.files[0]; e.target.value = "";
     if (!f) return;
-    if (f.size > 1.5 * 1024 * 1024) { onNotice && onNotice("Document trop volumineux (max 1,5 Mo). Pour un gros fichier, partage plutôt un lien.", "Document"); return; }
-    const data = await fileToDataURL(f);
-    if (data) onSend({ file: { name: f.name, type: f.type, data } }); else onNotice && onNotice("Document illisible.", "Document");
+    if (f.size > lim.file * 1024 * 1024) { onUpsell && onUpsell({ type: "file", limit: lim.file }); return; }
+    setBusy(true);
+    try {
+      if (useStorage) {
+        const ext = ((f.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "")) || "bin";
+        const m = await uploadToStorage(f, ext, f.name);
+        if (m) onSend({ file: m }); else onNotice && onNotice("Envoi impossible. Vérifie ta connexion.", "Document");
+      } else {
+        const data = await fileToDataURL(f);
+        if (data) onSend({ file: { name: f.name, type: f.type, data } }); else onNotice && onNotice("Document illisible.", "Document");
+      }
+    } finally { setBusy(false); }
   };
   const startRec = async () => {
     if (recording) return;
@@ -952,14 +1034,22 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }
       mr.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
         if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
-        if (blob.size > 0) { const data = await fileToDataURL(blob); if (data) onSend({ audio: data }); }
+        if (!blob.size) return;
+        setBusy(true);
+        try {
+          if (useStorage) { const m = await uploadToStorage(blob, "webm"); if (m) onSend({ audio: m }); else onNotice && onNotice("Envoi du vocal impossible. Vérifie ta connexion.", "Vocal"); }
+          else { const data = await fileToDataURL(blob); if (data) onSend({ audio: data }); }
+        } finally { setBusy(false); }
       };
       mr.start(); recRef.current = mr; setRecording(true); setRecSec(0);
-      timerRef.current = setInterval(() => setRecSec((s) => (s >= 60 ? (stopRec(), s) : s + 1)), 1000);
+      timerRef.current = setInterval(() => setRecSec((s) => s + 1), 1000);
     } catch (e) { onNotice && onNotice("Micro indisponible ou refusé. Autorise le micro dans ton navigateur pour envoyer un vocal.", "Message vocal"); }
   };
   const stopRec = () => { if (recRef.current && recording) { try { recRef.current.stop(); } catch (e) { /* */ } setRecording(false); } if (timerRef.current) clearInterval(timerRef.current); };
   const cancelRec = () => { if (recRef.current) { recRef.current.onstop = () => { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); }; try { recRef.current.stop(); } catch (e) { /* */ } } setRecording(false); if (timerRef.current) clearInterval(timerRef.current); };
+  useEffect(() => {
+    if (recording && recSec >= lim.audioSec) { stopRec(); if (!lim.storage) onUpsell && onUpsell({ type: "audio", limit: lim.audioSec }); }
+  }, [recSec, recording]);
   const askNotif = () => { if (typeof Notification === "undefined") return; Notification.requestPermission().then((p) => setNotifPerm(p)); };
   const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   return (
@@ -983,9 +1073,9 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }
                   <div key={m.id} className={`chat-msg ${mine ? "mine" : ""}`}>
                     {!mine && <span className="chat-name">{m.by}{m.role === "patron" ? " · patron" : ""}</span>}
                     <div className="chat-bubble">
-                      {m.image && <img className="chat-img" src={m.image} alt="" onClick={() => setLightbox(m.image)} />}
-                      {m.audio && <audio className="chat-audio" controls src={m.audio} />}
-                      {m.file && <a className="chat-file" href={m.file.data} download={m.file.name}>📎 {m.file.name}</a>}
+                      {m.image && <ChatMedia media={m.image} kind="image" onImage={setLightbox} />}
+                      {m.audio && <ChatMedia media={m.audio} kind="audio" />}
+                      {m.file && <ChatMedia media={m.file} kind="file" />}
                       {m.text && <span className="chat-txt">{m.text}</span>}
                     </div>
                     <span className="chat-time">{m.time}</span>
@@ -1002,11 +1092,11 @@ function ChatWidget({ messages, myId, open, onToggle, onSend, unread, onNotice }
             </div>
           ) : (
             <div className="chat-input">
-              <button className="chat-icon" onClick={() => imgRef.current && imgRef.current.click()} title="Photo" aria-label="Photo">📷</button>
-              <button className="chat-icon" onClick={() => fileRef.current && fileRef.current.click()} title="Document" aria-label="Document">📎</button>
-              <button className="chat-icon" onClick={startRec} title="Message vocal" aria-label="Vocal">🎤</button>
-              <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Message…" onKeyDown={(e) => e.key === "Enter" && submitText()} />
-              <button className="chat-send" onClick={submitText} disabled={!text.trim()} aria-label="Envoyer"><Send size={18} /></button>
+              <button className="chat-icon" onClick={() => imgRef.current && imgRef.current.click()} title="Photo" aria-label="Photo" disabled={busy}>📷</button>
+              <button className="chat-icon" onClick={() => fileRef.current && fileRef.current.click()} title="Document" aria-label="Document" disabled={busy}>📎</button>
+              <button className="chat-icon" onClick={startRec} title="Message vocal" aria-label="Vocal" disabled={busy}>🎤</button>
+              <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={busy ? "Envoi en cours…" : "Message…"} onKeyDown={(e) => e.key === "Enter" && submitText()} disabled={busy} />
+              <button className="chat-send" onClick={submitText} disabled={!text.trim() || busy} aria-label="Envoyer"><Send size={18} /></button>
               <input ref={imgRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickImage} />
               <input ref={fileRef} type="file" style={{ display: "none" }} onChange={pickFile} />
             </div>
@@ -2530,6 +2620,7 @@ export default function App() {
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
+  const [mediaUpsell, setMediaUpsell] = useState(null); // null | { message }
   const [opsTab, setOpsTab] = useState("sales"); // tableau de bord : "sales" | "purchases"
   const [history, setHistory] = useState(null); // { type:"sale"|"purchase", item } pour l'historique au clic
   const [now, setNow] = useState(new Date());
@@ -3052,6 +3143,14 @@ export default function App() {
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
+  const chatUpsell = (info) => {
+    const plan = license ? license.plan : "S";
+    const planName = (FORMULAS[plan] || FORMULAS.S).name;
+    let message;
+    if (info.type === "file") message = `Ce document dépasse la limite de ${info.limit} Mo de ta formule ${planName}. Passe en Pro pour envoyer jusqu'à 15 Mo (Premium : 50 Mo), ou choisis un fichier plus léger.`;
+    else message = `Les messages vocaux sont limités à ${info.limit} s avec ta formule ${planName}. Passe en Pro pour des vocaux jusqu'à 2 min (Premium : 5 min).`;
+    setMediaUpsell({ message });
+  };
   const sendMessage = (payload) => {
     if (!currentUser) return;
     const p = typeof payload === "string" ? { text: payload } : (payload || {});
@@ -4505,6 +4604,12 @@ export default function App() {
           <p className="muted small" style={{ margin: 0 }}>Cette fonction est incluse dans les formules <strong>Pro</strong> et <strong>Premium</strong>. Passe à une formule supérieure pour l'utiliser.</p>
         </Modal>
       )}
+      {mediaUpsell && (
+        <Modal title="Limite de ta formule atteinte" onClose={() => setMediaUpsell(null)}
+          footer={<><button className="btn btn-line" onClick={() => setMediaUpsell(null)}>Garder ma formule</button><button className="btn btn-gold" onClick={() => { setMediaUpsell(null); go("abo"); }}>Passer en Pro</button></>}>
+          <p className="muted small" style={{ margin: 0, lineHeight: 1.5 }}>{mediaUpsell.message}</p>
+        </Modal>
+      )}
       {clientView && renderClientHistory()}
       {productView && renderProductHistory()}
       {receipt && <ReceiptModal data={receipt} shop={shop} onClose={() => setReceipt(null)} />}
@@ -4562,7 +4667,7 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
-      <ChatWidget messages={messages} myId={currentUser.id} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} unread={chatUnread} onNotice={notify} />
+      <ChatWidget messages={messages} myId={currentUser.id} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} unread={chatUnread} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
     </div>
   );
 }
@@ -5106,6 +5211,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chat-send:disabled { opacity:.4; cursor:default; }
 .chat-icon { width:38px; height:40px; flex-shrink:0; border:1px solid var(--line); border-radius:11px; background:var(--card); cursor:pointer; font-size:1.05rem; display:flex; align-items:center; justify-content:center; transition:.12s; }
 .chat-icon:hover { border-color:var(--gold); background:var(--gold-soft); }
+.chat-icon:disabled { opacity:.4; cursor:default; }
+.chat-loading { font-size:.8rem; color:var(--muted); font-style:italic; }
 .chat-img { max-width:200px; max-height:220px; border-radius:10px; display:block; cursor:pointer; margin-bottom:2px; }
 .chat-audio { width:210px; max-width:100%; height:38px; }
 .chat-file { display:inline-flex; align-items:center; gap:6px; font-weight:600; color:var(--gold); text-decoration:none; word-break:break-all; }
