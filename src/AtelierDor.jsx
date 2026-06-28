@@ -730,10 +730,11 @@ function PurchaseModal({ prices, clients, onClose, onSave, init }) {
   );
 }
 
-function GoldModal({ item, onClose, onSave }) {
-  const [f, setF] = useState(item ? { cat: goldCat(item), ...item } : { type: "Bague", desc: "", karat: 21, weight: "", qty: 1, cat: "bijou" });
+function GoldModal({ item, defaultCat, onClose, onSave }) {
+  const dc = defaultCat || "bijou";
+  const [f, setF] = useState(item ? { cat: goldCat(item), ...item } : { type: dc === "or" ? "Lingot" : "Bague", desc: "", karat: 21, weight: "", qty: 1, cat: dc });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.desc && f.weight && f.qty;
+  const valid = f.weight && f.qty;
   return (
     <Modal title={item ? "Modifier l'article" : "Ajouter au stock or"} onClose={onClose}
       footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" disabled={!valid} onClick={() => onSave({ ...f, weight: parseFloat(f.weight), qty: parseInt(f.qty) })}>Enregistrer</button></div>}>
@@ -750,7 +751,7 @@ function GoldModal({ item, onClose, onSave }) {
         <Field label="Poids unitaire (g)"><input className="input num" type="number" step="0.1" value={f.weight} onChange={(e) => set("weight", e.target.value)} /></Field>
         <Field label="Quantité"><input className="input num" type="number" min="1" value={f.qty} onChange={(e) => set("qty", e.target.value)} /></Field>
       </div>
-      <Field label="Description"><input className="input" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="ex : Bague chevalière homme" /></Field>
+      <Field label="Description (optionnel)"><input className="input" value={f.desc} onChange={(e) => set("desc", e.target.value)} placeholder="ex : Bague chevalière homme" /></Field>
       <Field label="Photo de l'article"><LogoField logo={f.photo} onChange={(v) => set("photo", v)} fallback="📷" label="photo" /></Field>
     </Modal>
   );
@@ -2673,6 +2674,37 @@ function PasswordChange() {
     </div>
   );
 }
+function InstallButton() {
+  const [deferred, setDeferred] = useState(null);
+  const [installed, setInstalled] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setDeferred(e); };
+    const onInstalled = () => { setInstalled(true); setDeferred(null); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    try { if ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone) setInstalled(true); } catch (e) { /* */ }
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+  const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const install = async () => {
+    if (deferred) { deferred.prompt(); try { await deferred.userChoice; } catch (e) { /* */ } setDeferred(null); }
+    else setShowHelp(true);
+  };
+  if (installed) return <p className="muted small" style={{ margin: 0 }}>✓ L'application est déjà installée sur cet appareil.</p>;
+  return (
+    <div>
+      <button className="btn btn-gold" onClick={install}><Download size={15} /> Installer l'application</button>
+      {showHelp && (
+        <p className="muted small" style={{ margin: "10px 0 0", lineHeight: 1.5 }}>
+          {isIos
+            ? <>Sur iPhone / iPad : appuie sur le bouton <strong>Partager</strong> (le carré avec une flèche ↑) en bas de Safari, puis choisis <strong>« Sur l'écran d'accueil »</strong>.</>
+            : <>Dans le menu de ton navigateur (le <strong>⋮</strong> en haut à droite), choisis <strong>« Installer l'application »</strong> ou <strong>« Ajouter à l'écran d'accueil »</strong>.</>}
+        </p>
+      )}
+    </div>
+  );
+}
 export default function App() {
   const [view, setView] = useState("dash");
   const [navOpen, setNavOpen] = useState(false);
@@ -3239,6 +3271,9 @@ export default function App() {
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
+  // enregistre le service worker (rend l'app installable + ouverture hors-ligne)
+  useEffect(() => { if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("/sw.js").catch(() => {}); } catch (e) { /* */ } } }, []);
+
   const chatUpsell = (info) => {
     const plan = license ? license.plan : "S";
     const planName = (FORMULAS[plan] || FORMULAS.S).name;
@@ -4538,6 +4573,12 @@ export default function App() {
       )}
 
       <div className="card">
+        <div className="card-head"><h3><Download size={15} /> Installer l'application</h3><span className="muted">Ordi & téléphone</span></div>
+        <p className="muted small" style={{ margin: "0 0 14px" }}>Ajoute Atelier d'Or sur ton écran d'accueil ou ton bureau : ça s'ouvre comme une vraie app, en plein écran, et même sans connexion.</p>
+        <InstallButton />
+      </div>
+
+      <div className="card">
         <div className="card-head">
           <h3><Download size={15} /> Données & sauvegarde</h3>
           <span className="muted">{saveState === "error" ? "Indisponible" : "À jour"}</span>
@@ -4727,7 +4768,7 @@ export default function App() {
 
       {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} init={modal.init} onClose={() => setModal(null)} onSave={addSale} onNewArticle={() => { go("stock"); setStockTab("divers"); setModal({ type: "divers" }); }} />}
       {modal?.type === "purchase" && <PurchaseModal prices={prices} clients={clients} init={modal.init} onClose={() => setModal(null)} onSave={addPurchase} />}
-      {modal?.type === "gold" && <GoldModal item={modal.data} onClose={() => setModal(null)} onSave={saveGold} />}
+      {modal?.type === "gold" && <GoldModal item={modal.data} defaultCat={stockTab === "or" ? "or" : "bijou"} onClose={() => setModal(null)} onSave={saveGold} />}
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
