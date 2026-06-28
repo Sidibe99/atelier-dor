@@ -155,6 +155,35 @@ const MEDIA_LIMITS = {
 };
 const mediaLimit = (plan) => MEDIA_LIMITS[plan] || MEDIA_LIMITS.S;
 
+// Postes & permissions : sections que le patron peut autoriser par employé
+const ACCESS_SECTIONS = [
+  { id: "dash", label: "Tableau de bord" },
+  { id: "sales", label: "Ventes" },
+  { id: "buy", label: "Achats d'or" },
+  { id: "stock", label: "Stock" },
+  { id: "clients", label: "Clients" },
+  { id: "credits", label: "Crédits & dettes" },
+  { id: "caisse", label: "Clôture de caisse" },
+  { id: "depenses", label: "Dépenses" },
+  { id: "reports", label: "Rapports" },
+  { id: "journal", label: "Historique" },
+  { id: "cours", label: "Cours de l'or" },
+  { id: "calc", label: "Calculatrice" },
+  { id: "settings", label: "Paramètres" },
+  { id: "abo", label: "Abonnement" },
+  { id: "equipe", label: "Équipe" },
+];
+const ALL_SECTION_IDS = ACCESS_SECTIONS.map((s) => s.id);
+const DEFAULT_VENDOR_PERMS = ["dash", "sales", "buy", "stock", "clients", "credits", "caisse", "depenses", "cours", "calc"];
+const POSTE_PRESETS = {
+  "2ᵉ administrateur": [...ALL_SECTION_IDS, "benefices"],
+  "Gérant": [...ALL_SECTION_IDS.filter((id) => !["settings", "abo", "equipe"].includes(id)), "benefices"],
+  "Comptable": ["dash", "reports", "journal", "caisse", "depenses", "credits", "cours", "calc", "benefices"],
+  "Vendeur": [...DEFAULT_VENDOR_PERMS],
+};
+const POSTE_ORDER = ["2ᵉ administrateur", "Gérant", "Comptable", "Vendeur", "Personnalisé"];
+const FULL_PERMS = [...ALL_SECTION_IDS, "benefices"];
+
 // tri d'une collection synchronisée (plus récent en premier), identique sur tous les appareils
 const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", journal: "date", gold: "added", divers: "added" };
 const cmpRecent = (k) => (a, b) => {
@@ -1611,16 +1640,58 @@ function VendorModal({ onClose, onCreated }) {
   );
 }
 
+function AccessModal({ member, onClose, onSaved }) {
+  const guessPoste = member.poste && POSTE_ORDER.includes(member.poste) ? member.poste : "Personnalisé";
+  const [poste, setPoste] = useState(guessPoste);
+  const [perms, setPerms] = useState(Array.isArray(member.perms) && member.perms.length ? member.perms.slice() : (POSTE_PRESETS[member.poste] || DEFAULT_VENDOR_PERMS).slice());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const applyPoste = (p) => { setPoste(p); if (POSTE_PRESETS[p]) setPerms(POSTE_PRESETS[p].slice()); };
+  const has = (id) => perms.includes(id);
+  const toggle = (id) => { setPoste("Personnalisé"); setPerms((ps) => (ps.includes(id) ? ps.filter((x) => x !== id) : [...ps, id])); };
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      const { error } = await supabase.rpc("set_member_access", { p_id: member.id, p_poste: poste, p_perms: perms });
+      if (error) throw error;
+      onSaved();
+    } catch (e) { setErr("Enregistrement impossible. Vérifie ta connexion."); setBusy(false); }
+  };
+  return (
+    <Modal title="Accès de l'employé" sub={member.name || member.email || ""} onClose={onClose}
+      footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save} disabled={busy}>{busy ? "…" : "Enregistrer"}</button></>}>
+      <Field label="Poste">
+        <select className="input" value={poste} onChange={(e) => applyPoste(e.target.value)}>
+          {POSTE_ORDER.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </Field>
+      <p className="muted small" style={{ margin: "2px 0 8px" }}>Coche ce que cet employé peut voir dans son menu :</p>
+      <div className="perm-grid">
+        {ACCESS_SECTIONS.map((s) => (
+          <label key={s.id} className={`perm-item ${has(s.id) ? "on" : ""}`}>
+            <input type="checkbox" checked={has(s.id)} onChange={() => toggle(s.id)} /> {s.label}
+          </label>
+        ))}
+      </div>
+      <label className={`perm-item perm-benef ${has("benefices") ? "on" : ""}`}>
+        <input type="checkbox" checked={has("benefices")} onChange={() => toggle("benefices")} /> Voir les bénéfices et marges
+      </label>
+      {err && <p className="lock-err">{err}</p>}
+    </Modal>
+  );
+}
+
 function OnlineTeam({ shopId, plan, meId, onBack }) {
   const [team, setTeam] = useState(null); // null = chargement
   const [err, setErr] = useState("");
   const [modal, setModal] = useState(false);
+  const [access, setAccess] = useState(null);
   const [confirmRm, setConfirmRm] = useState(null);
   const f = FORMULAS[plan] || FORMULAS.S;
   const load = useCallback(async () => {
     setErr("");
     try {
-      const { data, error } = await supabase.from("profiles").select("id, role, name, email").eq("shop_id", shopId);
+      const { data, error } = await supabase.from("profiles").select("id, role, name, email, poste, perms").eq("shop_id", shopId);
       if (error) throw error;
       setTeam(data || []);
     } catch (e) { setErr("Impossible de charger l'équipe. Vérifie ta connexion."); setTeam([]); }
@@ -1661,16 +1732,19 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
           <p className="muted small" style={{ margin: 0 }}>Aucun compte pour cette boutique.</p>
         ) : (
           <table className="table">
-            <thead><tr><th>Nom</th><th>E-mail</th><th>Rôle</th><th></th></tr></thead>
+            <thead><tr><th>Nom</th><th className="hide-sm">E-mail</th><th>Poste</th><th></th></tr></thead>
             <tbody>
               {list.map((u) => (
                 <tr key={u.id}>
                   <td><strong>{u.name || "—"}</strong>{u.id === meId && <span className="mini-tag">moi</span>}</td>
-                  <td className="muted">{u.email || "—"}</td>
-                  <td><span className={`pill ${u.role === "admin" ? "pill-gold" : "pill-ink"}`}>{u.role === "admin" ? "Patron" : "Vendeur"}</span></td>
-                  <td className="r">{u.role === "vendeur" && u.id !== meId && (
-                    <button className="icon-btn" onClick={() => setConfirmRm(u)}><Trash2 size={15} /></button>
-                  )}</td>
+                  <td className="muted hide-sm">{u.email || "—"}</td>
+                  <td><span className={`pill ${u.role === "admin" ? "pill-gold" : "pill-ink"}`}>{u.role === "admin" ? "Patron" : (u.poste || "Vendeur")}</span></td>
+                  <td className="r nowrap">
+                    {u.role !== "admin" && u.id !== meId && <button className="btn btn-xs btn-line" onClick={() => setAccess(u)}>Accès</button>}
+                    {u.role === "vendeur" && u.id !== meId && (
+                      <button className="icon-btn" onClick={() => setConfirmRm(u)}><Trash2 size={15} /></button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1682,10 +1756,11 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
       <div className="card">
         <div className="card-head"><h3>Comment ça marche</h3></div>
         <p className="muted small" style={{ margin: 0 }}>
-          Chaque employé se connecte en ligne avec son <strong>e-mail et son mot de passe</strong>, sur la même adresse que toi. Le <strong>patron</strong> a accès à tout ; le <strong>vendeur</strong> accède aux ventes, achats, stock, clients, crédits, caisse et dépenses. Crée un compte vendeur ci-dessus puis transmets-lui ses identifiants.
+          Chaque employé se connecte en ligne avec son <strong>e-mail et son mot de passe</strong>. Crée le compte ci-dessus, puis clique sur <strong>« Accès »</strong> pour choisir son <strong>poste</strong> (2ᵉ admin, Gérant, Comptable, Vendeur…) et cocher exactement <strong>les sections qu'il peut voir</strong> et s'il a le droit de voir les <strong>bénéfices et marges</strong>. Le <strong>patron</strong> garde toujours l'accès complet.
         </p>
       </div>
       {modal && <VendorModal onClose={() => setModal(false)} onCreated={() => { setModal(false); load(); }} />}
+      {access && <AccessModal member={access} onClose={() => setAccess(null)} onSaved={() => { setAccess(null); load(); }} />}
       {confirmRm && <ConfirmModal title="Retirer ce vendeur ?" message={`« ${confirmRm.name || confirmRm.email || "Ce vendeur"} » ne pourra plus se connecter.`} okLabel="Retirer" danger onCancel={() => setConfirmRm(null)} onOk={() => { const v = confirmRm; setConfirmRm(null); doRemoveVendor(v.id); }} />}
     </>
   );
@@ -3410,7 +3485,7 @@ export default function App() {
     const expS = shopRow.expiry ? String(shopRow.expiry).slice(0, 10) : "";
     setLicense({ valid: true, plan: shopRow.plan || "S", lifetime: false, expiry: expS ? new Date(expS) : null, code: "online" });
     const mail = authUser && authUser.email ? authUser.email : "";
-    setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur", shopId: shopRow.id });
+    setCurrentUser({ id: authUser ? authUser.id : "online", name: profile.name || (mail ? mail.split("@")[0] : "Utilisateur"), email: mail, role: profile.role === "admin" ? "patron" : "vendeur", poste: profile.poste || "", perms: Array.isArray(profile.perms) ? profile.perms : null, shopId: shopRow.id });
     setOnlineReady(true);
   }, [authUser]);
   const activate = (c) => {
@@ -3575,7 +3650,7 @@ export default function App() {
       <div className="kpis">
         <Kpi icon={Coins} label="Valeur du stock or" value={fcfa(m.stockOrValue)} sub={`${g(m.stockOrWeight)} · au cours du jour`} tone="gold" />
         <Kpi icon={Wallet} label="Trésorerie" value={fcfa(m.tresorerie)} sub="caisse + mobile money" tone="green" />
-        <Kpi icon={TrendingUp} label="Ventes du jour" value={fcfa(m.ventesJour)} sub={isPatron ? `Bénéfice cumulé ${fcfa(m.beneficeVentes)}` : "chiffre d'affaires du jour"} tone="gold" />
+        <Kpi icon={TrendingUp} label="Ventes du jour" value={fcfa(m.ventesJour)} sub={seeMargin ? `Bénéfice cumulé ${fcfa(m.beneficeVentes)}` : "chiffre d'affaires du jour"} tone="gold" />
         <Kpi icon={TrendingDown} label="Achats du jour" value={fcfa(m.achatsJour)} sub="rachats clients" tone="clay" />
       </div>
       <div className="row2">
@@ -3665,7 +3740,7 @@ export default function App() {
           </div>
         </div>
         <table className="table fit">
-          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="hide-sm">Vendeur</th><th className="hide-sm">Paiement</th>{isPatron && <th className="r hide-sm">Marge</th>}<th className="r">Total</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th className="hide-sm">Type</th><th>Détail</th><th className="hide-sm">Client</th><th className="hide-sm">Vendeur</th><th className="hide-sm">Paiement</th>{seeMargin && <th className="r hide-sm">Marge</th>}<th className="r">Total</th><th></th></tr></thead>
           <tbody>
             {list.map((s) => {
               const bal = balanceFor(s);
@@ -3677,7 +3752,7 @@ export default function App() {
                 <td className="hide-sm">{clientCell(s.client)}</td>
                 <td className="muted hide-sm">{s.by || "—"}</td>
                 <td className="muted hide-sm">{s.pay}</td>
-                {isPatron && <td className="r num hide-sm">{fcfa(s.total - s.cost)}</td>}
+                {seeMargin && <td className="r num hide-sm">{fcfa(s.total - s.cost)}</td>}
                 <td className="r num pos">{fcfa(s.total)}</td>
                 <td className="r"><div className="rowbtns" onClick={(e) => e.stopPropagation()}>
                   {isPatron && !s.returned && <button className="btn btn-xs btn-line" onClick={() => setReturnFor(s)}>Retour</button>}
@@ -3819,7 +3894,7 @@ export default function App() {
           <div className="ch-kpis">
             <div className="ch-kpi"><span>En stock</span><strong className="num">{item.qty}</strong></div>
             <div className="ch-kpi"><span>Vendu (total)</span><strong className="num pos">{fcfa(sold)}</strong></div>
-            {isPatron && <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>}
+            {seeMargin && <div className="ch-kpi"><span>Marge</span><strong className="num">{fcfa(marge)}</strong></div>}
             <div className="ch-kpi"><span>En stock depuis</span><strong>{daysInStock(item) != null ? `${daysInStock(item)} j` : "—"}</strong></div>
           </div>
           <h4 className="ch-h">Entrée</h4>
@@ -3940,16 +4015,16 @@ export default function App() {
             </div>
           </div>
           <table className="table">
-            <thead><tr><th>Désignation</th><th>Catégorie</th><th className="r">Qté</th>{isPatron && <th className="r">Coût</th>}<th className="r">Vente</th>{isPatron && <th className="r">Marge u.</th>}<th></th></tr></thead>
+            <thead><tr><th>Désignation</th><th>Catégorie</th><th className="r">Qté</th>{seeMargin && <th className="r">Coût</th>}<th className="r">Vente</th>{seeMargin && <th className="r">Marge u.</th>}<th></th></tr></thead>
             <tbody>
               {divers.map((it) => (
                 <tr key={it.id} className={it.qty <= it.min ? "warn-row" : ""}>
                   <td><div className="prod-cell">{it.photo ? <img className="prod-thumb" src={it.photo} alt="" /> : <span className="prod-thumb ph">📷</span>}<button className="name-link" onClick={() => setProductView({ kind: "divers", item: it })}>{it.name}</button></div>{it.qty <= it.min && <span className="mini-warn">stock bas</span>}</td>
                   <td className="muted">{it.cat}</td>
                   <td className="r num">{it.qty} {it.unit}</td>
-                  {isPatron && <td className="r num">{fcfa(it.cost)}</td>}
+                  {seeMargin && <td className="r num">{fcfa(it.cost)}</td>}
                   <td className="r num">{fcfa(it.price)}</td>
-                  {isPatron && <td className="r num">{fcfa(it.price - it.cost)}</td>}
+                  {seeMargin && <td className="r num">{fcfa(it.price - it.cost)}</td>}
                   <td className="r"><div className="rowbtns">
                     <button className="icon-btn" onClick={() => setModal({ type: "divers", data: it })}><Pencil size={15} /></button>
                     {isPatron && <button className="icon-btn" onClick={() => del(setDivers, it.id, "stock", it.name)}><Trash2 size={15} /></button>}
@@ -4234,7 +4309,7 @@ export default function App() {
         <div className="kpis">
           <Kpi icon={TrendingDown} label="Dépenses ce mois-ci" value={fcfa(moisTotal)} sub="charges du mois en cours" tone="clay" />
           <Kpi icon={Receipt} label="Dépenses cumulées" value={fcfa(total)} sub={`${expenses.length} dépense(s)`} tone="clay" />
-          {isPatron && <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(m.beneficeNet)} sub={`Marge brute ${fcfa(m.beneficeVentes)}`} tone="green" />}
+          {seeMargin && <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(m.beneficeNet)} sub={`Marge brute ${fcfa(m.beneficeVentes)}`} tone="green" />}
         </div>
         <div className="card">
           <div className="card-head">
@@ -4332,9 +4407,9 @@ export default function App() {
           <button className="btn btn-line" onClick={exportPeriode}><Download size={15} /> Exporter la période</button>
         </div>
         <div className="kpis">
-          <Kpi icon={Receipt} label={`Chiffre d'affaires · ${PERIOD_LABEL[reportPeriod].toLowerCase()}`} value={fcfa(pCA)} sub={`Marge brute ${fcfa(pMarge)} · ${pSales.length} vente(s)`} tone="gold" />
+          <Kpi icon={Receipt} label={`Chiffre d'affaires · ${PERIOD_LABEL[reportPeriod].toLowerCase()}`} value={fcfa(pCA)} sub={seeMargin ? `Marge brute ${fcfa(pMarge)} · ${pSales.length} vente(s)` : `${pSales.length} vente(s)`} tone="gold" />
           <Kpi icon={ArrowDownLeft} label="Achats / rachats" value={fcfa(pAchats)} sub={`${pPurch.length} rachat(s)`} tone="clay" />
-          <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(pNet)} sub={`marge − dépenses (${fcfa(pDep)})`} tone="green" />
+          {seeMargin && <Kpi icon={TrendingUp} label="Bénéfice net" value={fcfa(pNet)} sub={`marge − dépenses (${fcfa(pDep)})`} tone="green" />}
           <Kpi icon={Scale} label="Or en stock (actuel)" value={g(m.stockOrWeight)} sub={fcfa(m.stockOrValue)} tone="gold" />
         </div>
         <div className="row2">
@@ -4385,7 +4460,7 @@ export default function App() {
           </div>
           {byType.length === 0 ? <p className="muted small">Aucune vente enregistrée pour l'instant.</p> : (
             <table className="table">
-              <thead><tr><th>Produit</th><th>Catégorie</th><th className="r">Qté vendue</th><th className="r">Chiffre d'affaires</th><th className="r">Marge</th></tr></thead>
+              <thead><tr><th>Produit</th><th>Catégorie</th><th className="r">Qté vendue</th><th className="r">Chiffre d'affaires</th>{seeMargin && <th className="r">Marge</th>}</tr></thead>
               <tbody>
                 {byType.map((t, i) => (
                   <tr key={i}>
@@ -4393,7 +4468,7 @@ export default function App() {
                     <td><span className={`pill ${t.kind === "divers" ? "pill-ink" : "pill-gold"}`}>{KIND_LABEL[t.kind] || "Or"}</span></td>
                     <td className="r num">{t.qty}</td>
                     <td className="r num pos">{fcfa(t.revenue)}</td>
-                    <td className="r num">{fcfa(t.marge)}</td>
+                    {seeMargin && <td className="r num">{fcfa(t.marge)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -4407,14 +4482,14 @@ export default function App() {
           </div>
           {byVend.length === 0 ? <p className="muted small">Aucune vente sur la période.</p> : (
             <table className="table">
-              <thead><tr><th>Vendeur</th><th className="r">Ventes</th><th className="r">Chiffre d'affaires</th><th className="r">Bénéfice</th><th className="r">Encaissé</th></tr></thead>
+              <thead><tr><th>Vendeur</th><th className="r">Ventes</th><th className="r">Chiffre d'affaires</th>{seeMargin && <th className="r">Bénéfice</th>}<th className="r">Encaissé</th></tr></thead>
               <tbody>
                 {byVend.map((v, i) => (
                   <tr key={i}>
                     <td><strong>{i === 0 && v.ca > 0 ? "🏆 " : ""}{v.name}</strong></td>
                     <td className="r num">{v.nSales}</td>
                     <td className="r num pos">{fcfa(v.ca)}</td>
-                    <td className="r num">{fcfa(v.marge)}</td>
+                    {seeMargin && <td className="r num">{fcfa(v.marge)}</td>}
                     <td className="r num">{fcfa(v.enc)}</td>
                   </tr>
                 ))}
@@ -4688,6 +4763,9 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
+  const myPerms = isPatron ? FULL_PERMS : (Array.isArray(currentUser.perms) && currentUser.perms.length ? currentUser.perms : DEFAULT_VENDOR_PERMS);
+  const can = (id) => isPatron || myPerms.includes(id);
+  const seeMargin = isPatron || myPerms.includes("benefices");
   const chatUnreadMap = (() => {
     const map = { all: 0 };
     messages.forEach((m) => {
@@ -4698,8 +4776,8 @@ export default function App() {
     return map;
   })();
   const chatUnread = Object.values(chatUnreadMap).reduce((a, b) => a + b, 0);
-  const navItems = isPatron ? NAV : NAV.filter((n) => !["equipe", "settings", "reports", "abo", "journal"].includes(n.id));
-  const cur = (navItems.some((n) => n.id === view) || (isPatron && view === "equipe")) ? view : "dash";
+  const navItems = NAV.filter((n) => can(n.id));
+  const cur = (navItems.some((n) => n.id === view) || (can("equipe") && view === "equipe")) ? view : "dash";
 
   return (
     <div className="app">
@@ -4709,7 +4787,7 @@ export default function App() {
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <div className="brand">
           <BrandMark />
-          <div><div className="brand-name">{shop.name || "Atelier d'Or"}</div><div className="brand-sub">{currentUser.name} · {isPatron ? "Patron" : "Vendeur"}</div></div>
+          <div><div className="brand-name">{shop.name || "Atelier d'Or"}</div><div className="brand-sub">{currentUser.name} · {isPatron ? "Patron" : (currentUser.poste || "Vendeur")}</div></div>
         </div>
         <nav>
           {navItems.map((n) => (
@@ -5171,6 +5249,12 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 
 /* ---- équipe / sécurité ---- */
 .mini-tag { font-size:10px; color:var(--gold); background:var(--gold-soft); padding:1px 6px; border-radius:10px; margin-left:8px; }
+.perm-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }
+.perm-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; font-size:.86rem; cursor:pointer; user-select:none; }
+.perm-item.on { border-color:var(--gold); background:var(--gold-soft); }
+.perm-item input { accent-color:var(--gold); width:16px; height:16px; }
+.perm-benef { display:flex; margin-top:2px; font-weight:600; }
+.nowrap { white-space:nowrap; }
 .avatar.sm { width:32px; height:32px; font-size:12px; }
 .side-user { display:flex; align-items:center; gap:9px; padding:8px 6px 12px; }
 .side-user .avatar { background:rgba(255,255,255,.1); }
