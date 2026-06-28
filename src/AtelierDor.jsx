@@ -575,7 +575,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
 
   // 5 - Convertisseur de devises (euro = parité fixe, dollar = taux live)
   const EUR_XOF = 655.957;
-  const cvRates = { XOF: 1, USD: rate || 0, EUR: EUR_XOF };
+  const cvRates = { XOF: 1, USD: Math.round(rate) || 0, EUR: EUR_XOF };
   const CUR = [{ k: "XOF", n: "FCFA", s: "F" }, { k: "USD", n: "Dollar $", s: "$" }, { k: "EUR", n: "Euro €", s: "€" }];
   const [cvAmount, setCvAmount] = useState("");
   const [cvFrom, setCvFrom] = useState("USD");
@@ -677,7 +677,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
         <Field label="Vers"><select className="input" value={cvTo} onChange={(e) => setCvTo(e.target.value)}>{CUR.map((c) => <option key={c.k} value={c.k}>{c.n}</option>)}</select></Field>
       </div>
       <button className="btn btn-line" onClick={cvSwap} style={{ marginTop: 4 }}>⇅ Inverser les devises</button>
-      <p className="src-note">1 $ = {dec(rate)} F (taux en direct) · 1 € = 655,957 F (parité fixe FCFA).</p>
+      <p className="src-note">1 $ = {nf.format(Math.round(rate))} F (taux en direct) · 1 € = 655,957 F (parité fixe FCFA).</p>
     </div>
     </>
   );
