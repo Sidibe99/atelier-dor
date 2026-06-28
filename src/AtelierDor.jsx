@@ -3404,6 +3404,8 @@ export default function App() {
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
+  // retire le splash de chargement (logo Au dans index.html) une fois l'app affichée
+  useEffect(() => { const b = typeof document !== "undefined" && document.getElementById("boot"); if (b) { b.style.opacity = "0"; setTimeout(() => { try { b.remove(); } catch (e) { /* */ } }, 350); } }, []);
   // enregistre le service worker + détecte les nouvelles versions déployées
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
