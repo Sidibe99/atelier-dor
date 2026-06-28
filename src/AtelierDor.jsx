@@ -5552,7 +5552,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
 .update-txt { display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:600; }
 .update-acts { display:flex; gap:8px; flex-shrink:0; }
-.update-bar .btn-ghost { color:#e9dcc2; }
+.update-bar .btn-ghost { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.4); }
+.update-bar .btn-ghost:hover { background:rgba(255,255,255,.14); }
 .jrnl .tl-body { padding-bottom:14px; }
 .jrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .jdetail { color:var(--ink); }
