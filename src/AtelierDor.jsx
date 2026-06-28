@@ -638,7 +638,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
           <Field label="FCFA → grammes"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></Field>
           <Field label="= Poids"><div className="input input-ro num">{g(aGrams)}</div></Field>
         </div>
-        <p className="src-note">Cours mondial : {dec(spot)} $/once · taux : {dec(rate)} F/$ · or pur : {fcfa(perGram24)}/g.</p>
+        <p className="src-note">Cours mondial : {dec(spot)} $/once · taux : {nf.format(Math.round(rate))} F/$ · or pur : {fcfa(perGram24)}/g.</p>
       </div>
 
       <div className="card">
@@ -4473,7 +4473,7 @@ export default function App() {
         </div>
         <div className="cours-grid">
           <div className="stat"><div className="stat-ico"><Globe size={15} /></div><span className="stat-lab">Cours mondial</span><span className="stat-val">{dec(spot)} $<small>/once</small> <span className="stat-sep">·</span> {dec(spot / OZ)} $<small>/g</small></span></div>
-          <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{dec(rate)}<small> F</small></span></div>
+          <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{nf.format(Math.round(rate))}<small> F</small></span></div>
           <div className="stat hl"><div className="stat-ico gold"><Coins size={15} /></div><span className="stat-lab">Or pur 24K</span><span className="stat-val">{fcfa(perGram24)}<small>/g</small></span></div>
         </div>
         <div className="ch-foot">
