@@ -174,15 +174,29 @@ const ACCESS_SECTIONS = [
   { id: "equipe", label: "Équipe" },
 ];
 const ALL_SECTION_IDS = ACCESS_SECTIONS.map((s) => s.id);
-const DEFAULT_VENDOR_PERMS = ["dash", "sales", "buy", "stock", "clients", "credits", "caisse", "depenses", "cours", "calc"];
+// sections où le niveau « Modifier » a un sens (création / édition / suppression)
+const EDITABLE_SECTIONS = ["sales", "buy", "stock", "clients", "credits", "caisse", "depenses", "settings", "equipe"];
+const permLevel = (perms, id) => {
+  if (!perms) return "none";
+  if (Array.isArray(perms)) return perms.includes(id) ? (id === "benefices" ? "view" : "edit") : "none";
+  return perms[id] || "none";
+};
+const permsEmpty = (perms) => !perms || (Array.isArray(perms) ? perms.length === 0 : Object.keys(perms).length === 0);
+const mkPoste = (editIds, viewIds, benef) => {
+  const o = {};
+  (editIds || []).forEach((id) => { o[id] = "edit"; });
+  (viewIds || []).forEach((id) => { o[id] = "view"; });
+  if (benef) o.benefices = "view";
+  return o;
+};
+const DEFAULT_VENDOR_PERMS = mkPoste(["sales", "buy", "stock", "clients", "credits", "caisse", "depenses"], ["dash", "cours", "calc"], false);
 const POSTE_PRESETS = {
-  "2ᵉ administrateur": [...ALL_SECTION_IDS, "benefices"],
-  "Gérant": [...ALL_SECTION_IDS.filter((id) => !["settings", "abo", "equipe"].includes(id)), "benefices"],
-  "Comptable": ["dash", "reports", "journal", "caisse", "depenses", "credits", "cours", "calc", "benefices"],
-  "Vendeur": [...DEFAULT_VENDOR_PERMS],
+  "2ᵉ administrateur": mkPoste(ALL_SECTION_IDS, [], true),
+  "Gérant": mkPoste(ALL_SECTION_IDS.filter((id) => !["settings", "abo", "equipe"].includes(id)), [], true),
+  "Comptable": mkPoste([], ["dash", "reports", "journal", "caisse", "depenses", "credits", "cours", "calc"], true),
+  "Vendeur": mkPoste(["sales", "buy", "stock", "clients", "credits", "caisse", "depenses"], ["dash", "cours", "calc"], false),
 };
 const POSTE_ORDER = ["2ᵉ administrateur", "Gérant", "Comptable", "Vendeur", "Personnalisé"];
-const FULL_PERMS = [...ALL_SECTION_IDS, "benefices"];
 
 // tri d'une collection synchronisée (plus récent en premier), identique sur tous les appareils
 const SORT_KEY = { sales: "date", payments: "date", purchases: "date", purchasePayments: "date", closures: "date", expenses: "date", journal: "date", gold: "added", divers: "added" };
@@ -549,7 +563,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   );
 }
 
-function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
+function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSell = true, canBuy = true }) {
   // 1 - Valeur d'un article
   const [k1, setK1] = useState(21);
   const [w1, setW1] = useState("");
@@ -636,10 +650,10 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
         </div>
         {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix de référence {fcfa(refPpg)}/g · rachat −{mAchat}% = {fcfa(buyG)}/g · vente +{mVente}% = {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p>}
         {!k1 && <p className="calc-hint">ℹ️ Le <b>prix de référence</b> est ta base du gramme (la valeur de l'or au moment du calcul). L'app en déduit automatiquement le <b style={{ color: "var(--clay)" }}>rachat</b> (− marge) et la <b style={{ color: "var(--green)" }}>vente</b> (+ marge). Pour un calcul exact selon la pureté, choisis plutôt le <b>carat réel</b> au lieu de « Sans carat ».</p>}
-        {onUse && (
+        {onUse && (canBuy || canSell) && (
           <div className="data-actions" style={{ marginTop: 12 }}>
-            <button className="btn btn-line" disabled={!(wv > 0 && buyG > 0)} onClick={() => onUse("purchase", { karat: k1, weight: wv, ppg: buyG })}><ArrowDownLeft size={15} /> Enregistrer le rachat</button>
-            <button className="btn btn-gold" disabled={!(wv > 0 && sellG > 0)} onClick={() => onUse("sale", { kind: "or", karat: k1, weight: wv, ppg: sellG, facon: fac })}><Plus size={15} /> Enregistrer la vente</button>
+            {canBuy && <button className="btn btn-line" disabled={!(wv > 0 && buyG > 0)} onClick={() => onUse("purchase", { karat: k1, weight: wv, ppg: buyG })}><ArrowDownLeft size={15} /> Enregistrer le rachat</button>}
+            {canSell && <button className="btn btn-gold" disabled={!(wv > 0 && sellG > 0)} onClick={() => onUse("sale", { kind: "or", karat: k1, weight: wv, ppg: sellG, facon: fac })}><Plus size={15} /> Enregistrer la vente</button>}
           </div>
         )}
       </div>
@@ -1641,22 +1655,39 @@ function VendorModal({ onClose, onCreated }) {
 }
 
 function AccessModal({ member, onClose, onSaved }) {
-  const guessPoste = member.poste && POSTE_ORDER.includes(member.poste) ? member.poste : "Personnalisé";
-  const [poste, setPoste] = useState(guessPoste);
-  const [perms, setPerms] = useState(Array.isArray(member.perms) && member.perms.length ? member.perms.slice() : (POSTE_PRESETS[member.poste] || DEFAULT_VENDOR_PERMS).slice());
+  const isPreset = member.poste && POSTE_ORDER.includes(member.poste) && member.poste !== "Personnalisé";
+  const [poste, setPoste] = useState(isPreset ? member.poste : "Personnalisé");
+  const [customPoste, setCustomPoste] = useState(isPreset ? "" : (member.poste || ""));
+  const toObj = (p) => {
+    if (p && !Array.isArray(p) && typeof p === "object") return { ...p };
+    const o = {};
+    if (Array.isArray(p)) p.forEach((id) => { o[id] = id === "benefices" ? "view" : "edit"; });
+    return o;
+  };
+  const [perms, setPerms] = useState(member.perms && !permsEmpty(member.perms) ? toObj(member.perms) : { ...(POSTE_PRESETS[member.poste] || DEFAULT_VENDOR_PERMS) });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const applyPoste = (p) => { setPoste(p); if (POSTE_PRESETS[p]) setPerms(POSTE_PRESETS[p].slice()); };
-  const has = (id) => perms.includes(id);
-  const toggle = (id) => { setPoste("Personnalisé"); setPerms((ps) => (ps.includes(id) ? ps.filter((x) => x !== id) : [...ps, id])); };
+  const applyPoste = (p) => { setPoste(p); if (POSTE_PRESETS[p]) setPerms({ ...POSTE_PRESETS[p] }); };
+  const lvl = (id) => perms[id] || "none";
+  const setLvl = (id, v) => { setPoste("Personnalisé"); setPerms((ps) => { const n = { ...ps }; if (v === "none") delete n[id]; else n[id] = v; return n; }); };
+  const finalPoste = poste === "Personnalisé" ? (customPoste.trim() || "Personnalisé") : poste;
   const save = async () => {
     setBusy(true); setErr("");
     try {
-      const { error } = await supabase.rpc("set_member_access", { p_id: member.id, p_poste: poste, p_perms: perms });
+      const { error } = await supabase.rpc("set_member_access", { p_id: member.id, p_poste: finalPoste, p_perms: perms });
       if (error) throw error;
       onSaved();
     } catch (e) { setErr("Enregistrement impossible. Vérifie ta connexion."); setBusy(false); }
   };
+  const Seg = ({ id, opts }) => (
+    <div className="lvl-seg">
+      {opts.map((o) => (
+        <button key={o.v} type="button" className={`lvl-btn ${lvl(id) === o.v ? `on ${o.v}` : ""}`} onClick={() => setLvl(id, o.v)}>{o.t}</button>
+      ))}
+    </div>
+  );
+  const three = [{ v: "none", t: "Aucun" }, { v: "view", t: "Voir" }, { v: "edit", t: "Modifier" }];
+  const two = [{ v: "none", t: "Aucun" }, { v: "view", t: "Voir" }];
   return (
     <Modal title="Accès de l'employé" sub={member.name || member.email || ""} onClose={onClose}
       footer={<><button className="btn btn-line" onClick={onClose}>Annuler</button><button className="btn btn-gold" onClick={save} disabled={busy}>{busy ? "…" : "Enregistrer"}</button></>}>
@@ -1665,17 +1696,24 @@ function AccessModal({ member, onClose, onSaved }) {
           {POSTE_ORDER.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </Field>
-      <p className="muted small" style={{ margin: "2px 0 8px" }}>Coche ce que cet employé peut voir dans son menu :</p>
-      <div className="perm-grid">
+      {poste === "Personnalisé" && (
+        <Field label="Nom du poste">
+          <input className="input" value={customPoste} onChange={(e) => setCustomPoste(e.target.value)} placeholder="ex : Gérant adjoint, Apprenti…" />
+        </Field>
+      )}
+      <p className="muted small" style={{ margin: "2px 0 8px" }}>Pour chaque section : <strong>Aucun</strong> (caché), <strong>Voir</strong> (consultation seule) ou <strong>Modifier</strong> (peut changer).</p>
+      <div className="perm-rows">
         {ACCESS_SECTIONS.map((s) => (
-          <label key={s.id} className={`perm-item ${has(s.id) ? "on" : ""}`}>
-            <input type="checkbox" checked={has(s.id)} onChange={() => toggle(s.id)} /> {s.label}
-          </label>
+          <div key={s.id} className="perm-row">
+            <span className="perm-lab">{s.label}</span>
+            <Seg id={s.id} opts={EDITABLE_SECTIONS.includes(s.id) ? three : two} />
+          </div>
         ))}
+        <div className="perm-row perm-benef-row">
+          <span className="perm-lab">Bénéfices et marges</span>
+          <Seg id="benefices" opts={two} />
+        </div>
       </div>
-      <label className={`perm-item perm-benef ${has("benefices") ? "on" : ""}`}>
-        <input type="checkbox" checked={has("benefices")} onChange={() => toggle("benefices")} /> Voir les bénéfices et marges
-      </label>
       {err && <p className="lock-err">{err}</p>}
     </Modal>
   );
@@ -3736,7 +3774,7 @@ export default function App() {
           <h3>Historique des ventes <span className="count">{sales.length}</span></h3>
           <div className="head-btns">
             <button className="btn btn-line" onClick={() => xlsxExportG(`ventes-${TODAY}.xlsx`, { Ventes: rowsVentes() })}><Download size={15} /> Excel</button>
-            <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>
+            {canEdit("sales") && <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Nouvelle vente</button>}
           </div>
         </div>
         <table className="table fit">
@@ -3773,7 +3811,7 @@ export default function App() {
         <h3>Achats d'or (rachats clients) <span className="count">{purchases.length}</span></h3>
         <div className="head-btns">
           <button className="btn btn-line" onClick={() => xlsxExportG(`achats-${TODAY}.xlsx`, { Achats: rowsAchats() })}><Download size={15} /> Excel</button>
-          <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>
+          {canEdit("buy") && <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><Plus size={16} /> Nouvel achat</button>}
         </div>
       </div>
       <table className="table fit">
@@ -3965,7 +4003,7 @@ export default function App() {
             <div className="head-btns">
               <button className="btn btn-line" onClick={() => xlsxExportG(`stock-${title.toLowerCase().replace(/\s/g, "-")}-${TODAY}.xlsx`, { [title]: rowsGold(list) })}><Download size={15} /> Excel</button>
               <XlsxImportBtn label="Importer" onFile={guardImport(importGold)} />
-              <button className="btn btn-gold" onClick={() => setModal({ type: "gold" })}><Plus size={16} /> Ajouter</button>
+              {canEdit("stock") && <button className="btn btn-gold" onClick={() => setModal({ type: "gold" })}><Plus size={16} /> Ajouter</button>}
             </div>
           </div>
           <table className="table">
@@ -3985,7 +4023,7 @@ export default function App() {
                   <td className="r num">{it.qty}</td>
                   <td className="r num">{fcfa(it.weight * it.qty * prices[it.karat].vente)}</td>
                   <td className="r"><div className="rowbtns">
-                    <button className="icon-btn" onClick={() => setModal({ type: "gold", data: it })}><Pencil size={15} /></button>
+                    {canEdit("stock") && <button className="icon-btn" onClick={() => setModal({ type: "gold", data: it })}><Pencil size={15} /></button>}
                     {isPatron && <button className="icon-btn" onClick={() => del(setGold, it.id, "stock", `${it.desc || it.type || "Or"}${it.karat ? " · " + it.karat + "K" : ""}`)}><Trash2 size={15} /></button>}
                   </div></td>
                 </tr>
@@ -4011,7 +4049,7 @@ export default function App() {
             <div className="head-btns">
               <button className="btn btn-line" onClick={() => xlsxExportG(`stock-divers-${TODAY}.xlsx`, { Divers: rowsDivers() })}><Download size={15} /> Excel</button>
               <XlsxImportBtn label="Importer" onFile={guardImport(importDivers)} />
-              <button className="btn btn-gold" onClick={() => setModal({ type: "divers" })}><Plus size={16} /> Ajouter</button>
+              {canEdit("stock") && <button className="btn btn-gold" onClick={() => setModal({ type: "divers" })}><Plus size={16} /> Ajouter</button>}
             </div>
           </div>
           <table className="table">
@@ -4026,7 +4064,7 @@ export default function App() {
                   <td className="r num">{fcfa(it.price)}</td>
                   {seeMargin && <td className="r num">{fcfa(it.price - it.cost)}</td>}
                   <td className="r"><div className="rowbtns">
-                    <button className="icon-btn" onClick={() => setModal({ type: "divers", data: it })}><Pencil size={15} /></button>
+                    {canEdit("stock") && <button className="icon-btn" onClick={() => setModal({ type: "divers", data: it })}><Pencil size={15} /></button>}
                     {isPatron && <button className="icon-btn" onClick={() => del(setDivers, it.id, "stock", it.name)}><Trash2 size={15} /></button>}
                   </div></td>
                 </tr>
@@ -4046,7 +4084,7 @@ export default function App() {
         <div className="head-btns">
           <button className="btn btn-line" onClick={() => xlsxExportG(`clients-${TODAY}.xlsx`, { Clients: rowsClients() })}><Download size={15} /> Excel</button>
           <XlsxImportBtn label="Importer" onFile={guardImport(importClients)} />
-          <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>
+          {canEdit("clients") && <button className="btn btn-gold" onClick={() => setModal({ type: "client" })}><Plus size={16} /> Nouveau client</button>}
         </div>
       </div>
       <div className="seg seg-lg seg-3" style={{ marginBottom: 14 }}>
@@ -4077,7 +4115,7 @@ export default function App() {
                 <span className="muted small">{nv} vente(s) · {na} rachat(s)</span>
               </div>
               <div className="rowbtns">
-                <button className="icon-btn" onClick={() => setModal({ type: "client", data: c })}><Pencil size={15} /></button>
+                {canEdit("clients") && <button className="icon-btn" onClick={() => setModal({ type: "client", data: c })}><Pencil size={15} /></button>}
                 {isPatron && <button className="icon-btn" onClick={() => del(setClients, c.id, "client", c.name)}><Trash2 size={15} /></button>}
               </div>
             </div>
@@ -4118,7 +4156,7 @@ export default function App() {
                     <td className="r num neg"><strong>{fcfa(bal)}</strong></td>
                     <td className="r"><div className="rowbtns">
                       {remindCredit(s, bal) && <a className="btn btn-line btn-xs" href={remindCredit(s, bal)} target="_blank" rel="noreferrer">Rappel</a>}
-                      <button className="btn btn-gold btn-xs" onClick={() => setAcompteFor(s)}>Encaisser</button>
+                      {canEdit("credits") && <button className="btn btn-gold btn-xs" onClick={() => setAcompteFor(s)}>Encaisser</button>}
                     </div></td>
                   </tr>
                 ))}
@@ -4231,7 +4269,7 @@ export default function App() {
                   <span>Écart</span><strong className="num">{ecart > 0 ? "+" : ""}{fcfa(ecart)}</strong>
                 </div>
               )}
-              <button className="btn btn-gold recon-btn" disabled={!compted} onClick={cloturer}>Clôturer la journée</button>
+              {canEdit("caisse") && <button className="btn btn-gold recon-btn" disabled={!compted} onClick={cloturer}>Clôturer la journée</button>}
               {closedToday && <p className="muted small" style={{ margin: "10px 0 0" }}>Journée déjà clôturée à {closedToday.time} (écart {closedToday.ecart > 0 ? "+" : ""}{fcfa(closedToday.ecart)}). Tu peux re-clôturer si besoin.</p>}
             </div>
           </div>
@@ -4316,8 +4354,8 @@ export default function App() {
             <h3>Dépenses & charges <span className="count">{expenses.length}</span></h3>
             <div className="head-btns">
               <button className="btn btn-line" onClick={() => xlsxExportG(`depenses-${TODAY}.xlsx`, { Dépenses: rowsDepenses() })}><Download size={15} /> Excel</button>
-              <button className="btn btn-line" onClick={() => setModal({ type: "salary" })}><Users size={16} /> Verser un salaire</button>
-              <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>
+              {canEdit("depenses") && <button className="btn btn-line" onClick={() => setModal({ type: "salary" })}><Users size={16} /> Verser un salaire</button>}
+              {canEdit("depenses") && <button className="btn btn-clay" onClick={() => setModal({ type: "expense" })}><Plus size={16} /> Nouvelle dépense</button>}
             </div>
           </div>
           {expenses.length === 0 ? (
@@ -4335,7 +4373,7 @@ export default function App() {
                     <td className="muted">{e.by || "—"}</td>
                     <td className="r num neg">−{fcfa(e.amount)}</td>
                     <td className="r"><div className="rowbtns">
-                      <button className="icon-btn" onClick={() => setModal({ type: "expense", data: e })}><Pencil size={15} /></button>
+                      {canEdit("depenses") && <button className="icon-btn" onClick={() => setModal({ type: "expense", data: e })}><Pencil size={15} /></button>}
                       {isPatron && <button className="icon-btn" onClick={() => del(setExpenses, e.id, "depense", `${e.label} · ${fcfa(e.amount)}`)}><Trash2 size={15} /></button>}
                     </div></td>
                   </tr>
@@ -4722,7 +4760,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} onUse={(type, data) => { if (type === "sale") { setView("sales"); setModal({ type: "sale", init: data }); } else { setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} canSell={canEdit("sales")} canBuy={canEdit("buy")} onUse={(type, data) => { if (type === "sale") { if (!canEdit("sales")) return; setView("sales"); setModal({ type: "sale", init: data }); } else { if (!canEdit("buy")) return; setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -4763,9 +4801,11 @@ export default function App() {
     return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
-  const myPerms = isPatron ? FULL_PERMS : (Array.isArray(currentUser.perms) && currentUser.perms.length ? currentUser.perms : DEFAULT_VENDOR_PERMS);
-  const can = (id) => isPatron || myPerms.includes(id);
-  const seeMargin = isPatron || myPerms.includes("benefices");
+  const myPerms = isPatron ? null : (!permsEmpty(currentUser.perms) ? currentUser.perms : DEFAULT_VENDOR_PERMS);
+  const lvl = (id) => (isPatron ? "edit" : permLevel(myPerms, id));
+  const canSee = (id) => lvl(id) !== "none";
+  const canEdit = (id) => lvl(id) === "edit";
+  const seeMargin = isPatron || permLevel(myPerms, "benefices") === "view";
   const chatUnreadMap = (() => {
     const map = { all: 0 };
     messages.forEach((m) => {
@@ -4776,8 +4816,8 @@ export default function App() {
     return map;
   })();
   const chatUnread = Object.values(chatUnreadMap).reduce((a, b) => a + b, 0);
-  const navItems = NAV.filter((n) => can(n.id));
-  const cur = (navItems.some((n) => n.id === view) || (can("equipe") && view === "equipe")) ? view : "dash";
+  const navItems = NAV.filter((n) => canSee(n.id));
+  const cur = (navItems.some((n) => n.id === view) || (canSee("equipe") && view === "equipe")) ? view : "dash";
 
   return (
     <div className="app">
@@ -4837,8 +4877,8 @@ export default function App() {
             {(view === "sales" || view === "dash") && (
               <div className="search"><Search size={15} /><input placeholder="Rechercher…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
             )}
-            <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><ArrowDownLeft size={16} /> Achat</button>
-            <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Vente</button>
+            {canEdit("buy") && <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><ArrowDownLeft size={16} /> Achat</button>}
+            {canEdit("sales") && <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Vente</button>}
           </div>
         </header>
 
@@ -4915,9 +4955,9 @@ export default function App() {
             </div>
             <div className="data-actions" style={{ marginTop: 14, marginBottom: 0 }}>
               <button className="btn btn-line" onClick={() => { setHistory(null); setReceipt(buildReceipt(isSale ? it : { ...it, paid: purchasePaidFor(it.id), kind: "purchase" })); }}>{isSale ? "Voir le reçu" : "Bordereau"}</button>
-              {isSale && bal > 0 && <button className="btn btn-gold" onClick={() => { setHistory(null); setAcompteFor(it); }}>Encaisser</button>}
+              {isSale && bal > 0 && canEdit("credits") && <button className="btn btn-gold" onClick={() => { setHistory(null); setAcompteFor(it); }}>Encaisser</button>}
               {isPatron && isSale && !it.returned && <button className="btn btn-clay" onClick={() => { setHistory(null); setReturnFor(it); }}>Retour</button>}
-              {!isSale && bal > 0 && <button className="btn btn-clay" onClick={() => { setHistory(null); setSettleFor(it); }}>Solder</button>}
+              {!isSale && bal > 0 && canEdit("buy") && <button className="btn btn-clay" onClick={() => { setHistory(null); setSettleFor(it); }}>Solder</button>}
             </div>
           </Modal>
         );
@@ -5249,11 +5289,16 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 
 /* ---- équipe / sécurité ---- */
 .mini-tag { font-size:10px; color:var(--gold); background:var(--gold-soft); padding:1px 6px; border-radius:10px; margin-left:8px; }
-.perm-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }
-.perm-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; font-size:.86rem; cursor:pointer; user-select:none; }
-.perm-item.on { border-color:var(--gold); background:var(--gold-soft); }
-.perm-item input { accent-color:var(--gold); width:16px; height:16px; }
-.perm-benef { display:flex; margin-top:2px; font-weight:600; }
+.perm-rows { display:flex; flex-direction:column; gap:6px; margin-bottom:6px; }
+.perm-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 2px; border-bottom:1px solid var(--line); }
+.perm-benef-row { border-bottom:none; margin-top:4px; padding-top:10px; border-top:2px solid var(--line); font-weight:600; }
+.perm-lab { font-size:.88rem; }
+.lvl-seg { display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; flex:0 0 auto; }
+.lvl-btn { border:none; background:#fff; padding:5px 11px; font-size:.78rem; font-weight:600; color:var(--muted); cursor:pointer; border-left:1px solid var(--line); }
+.lvl-btn:first-child { border-left:none; }
+.lvl-btn.on.none { background:#ece5d6; color:var(--ink2); }
+.lvl-btn.on.view { background:var(--gold-soft); color:var(--gold); }
+.lvl-btn.on.edit { background:var(--gold); color:#fff; }
 .nowrap { white-space:nowrap; }
 .avatar.sm { width:32px; height:32px; font-size:12px; }
 .side-user { display:flex; align-items:center; gap:9px; padding:8px 6px 12px; }
