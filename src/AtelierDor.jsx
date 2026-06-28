@@ -129,29 +129,30 @@ const FORMULAS = {
   E: { name: "Essai", days: 7, admins: 1, users: 2, priceLabel: "Gratuit · 7 jours", trial: true,
        features: ["Toutes les fonctions débloquées", "7 jours pour tester", "1 admin · 2 utilisateurs"] },
   S: { name: "Standard", days: 30, admins: 1, users: 2, priceLabel: "5 000 F / mois",
-       features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Sauvegarde automatique"] },
+       features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Messagerie d'équipe (fichiers légers)", "Sauvegarde automatique"] },
   P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "10 000 F / mois",
-       features: ["2 admins · 5 utilisateurs", "Rapports détaillés + Export Excel", "Tout le Standard inclus"] },
+       features: ["2 admins · 5 utilisateurs", "Rapports détaillés + Export Excel", "Messagerie : médias jusqu'à 15 Mo · 2 Go", "Postes & permissions personnalisés", "Tout le Standard inclus"] },
   R: { name: "Premium", days: 365, admins: 99, users: 99, priceLabel: "100 000 F / an",
-       features: ["Admins & utilisateurs illimités", "1 an inclus", "Toutes les fonctions"] },
+       features: ["Admins & utilisateurs illimités", "1 an inclus", "Messagerie : médias jusqu'à 50 Mo · 10 Go", "Toutes les fonctions"] },
 };
 
 // Fonctions réservées : l'Essai (E) débloque tout, Standard (S) non, Pro (P) et Premium (R) oui.
 const FEATURE_PLANS = {
   reports: ["E", "P", "R"],
   excel: ["E", "P", "R"],
+  roles: ["E", "P", "R"],
 };
 const planAllows = (plan, feature) => {
   const allowed = FEATURE_PLANS[feature];
   return !allowed || allowed.includes(plan);
 };
 
-// Limites des médias du chat par formule (Mo pour image/fichier, secondes pour le vocal)
+// Limites des médias du chat par formule : taille par fichier (Mo), durée vocal (s), volume total de stockage (Mo)
 const MEDIA_LIMITS = {
-  E: { img: 1.5, audioSec: 30, file: 2, storage: false },
-  S: { img: 1.5, audioSec: 30, file: 2, storage: false },
-  P: { img: 5, audioSec: 120, file: 15, storage: true },
-  R: { img: 15, audioSec: 300, file: 50, storage: true },
+  E: { img: 1.5, audioSec: 30, file: 2, storage: false, quotaMB: 0 },
+  S: { img: 2, audioSec: 60, file: 3, storage: false, quotaMB: 0 },
+  P: { img: 5, audioSec: 120, file: 15, storage: true, quotaMB: 2000 },
+  R: { img: 15, audioSec: 300, file: 50, storage: true, quotaMB: 10000 },
 };
 const mediaLimit = (plan) => MEDIA_LIMITS[plan] || MEDIA_LIMITS.S;
 
@@ -1044,8 +1045,24 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
     if (maxTs) onSeen(activeChat, maxTs);
   }, [open, activeChat, sorted.length]);
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  const quotaMB = lim.quotaMB || 0;
+  const storageUsageBytes = async () => {
+    try {
+      const { data, error } = await supabase.storage.from("chat").list(shopId, { limit: 1000 });
+      if (error || !data) return 0;
+      return data.reduce((a, f) => a + ((f.metadata && f.metadata.size) || 0), 0);
+    } catch (e) { return 0; }
+  };
+  const fmtVol = (mb) => (mb >= 1000 ? `${(mb / 1000).toLocaleString("fr-FR")} Go` : `${mb} Mo`);
   const uploadToStorage = async (blob, ext, name) => {
     try {
+      if (quotaMB > 0) {
+        const used = await storageUsageBytes();
+        if (used + (blob.size || 0) > quotaMB * 1024 * 1024) {
+          onNotice && onNotice(`Volume de stockage atteint (${fmtVol(quotaMB)}). Supprime d'anciens médias du chat ou passe à une formule supérieure pour plus d'espace.`, "Stockage plein");
+          return null;
+        }
+      }
       const path = `${shopId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage.from("chat").upload(path, blob, { contentType: blob.type || undefined, upsert: false });
       if (error) return null;
@@ -1782,7 +1799,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
                   <td className="muted hide-sm">{u.email || "—"}</td>
                   <td><span className={`pill ${u.role === "admin" ? "pill-gold" : "pill-ink"}`}>{u.role === "admin" ? "Patron" : (u.poste || "Vendeur")}</span></td>
                   <td className="r nowrap">
-                    {u.role !== "admin" && u.id !== meId && <button className="btn btn-xs btn-line" onClick={() => setAccess(u)}>Accès</button>}
+                    {u.role !== "admin" && u.id !== meId && planAllows(plan, "roles") && <button className="btn btn-xs btn-line" onClick={() => setAccess(u)}>Accès</button>}
                     {u.role === "vendeur" && u.id !== meId && (
                       <button className="icon-btn" onClick={() => setConfirmRm(u)}><Trash2 size={15} /></button>
                     )}
@@ -1800,6 +1817,7 @@ function OnlineTeam({ shopId, plan, meId, onBack }) {
         <p className="muted small" style={{ margin: 0 }}>
           Chaque employé se connecte en ligne avec son <strong>e-mail et son mot de passe</strong>. Crée le compte ci-dessus, puis clique sur <strong>« Accès »</strong> pour choisir son <strong>poste</strong> (2ᵉ admin, Gérant, Comptable, Vendeur…) et cocher exactement <strong>les sections qu'il peut voir</strong> et s'il a le droit de voir les <strong>bénéfices et marges</strong>. Le <strong>patron</strong> garde toujours l'accès complet.
         </p>
+        {!planAllows(plan, "roles") && <p className="muted small" style={{ margin: "8px 0 0", color: "var(--gold)" }}>✨ Les <strong>postes &amp; permissions personnalisés</strong> sont inclus à partir de la formule <strong>Pro</strong>.</p>}
       </div>
       {modal && <VendorModal onClose={() => setModal(false)} onCreated={() => { setModal(false); load(); }} />}
       {access && <AccessModal member={access} onClose={() => setAccess(null)} onSaved={() => { setAccess(null); load(); }} />}
