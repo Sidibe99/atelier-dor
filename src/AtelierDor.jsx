@@ -128,12 +128,12 @@ const DAY = 86400000;
 const FORMULAS = {
   E: { name: "Essai", days: 7, admins: 1, users: 2, priceLabel: "Gratuit · 7 jours", trial: true,
        features: ["Toutes les fonctions débloquées", "7 jours pour tester", "1 admin · 2 utilisateurs"] },
-  S: { name: "Standard", days: 30, admins: 1, users: 2, priceLabel: "5 000 F / mois",
+  S: { name: "Standard", days: 30, admins: 1, users: 2, priceLabel: "5 000 F / mois", monthly: 5000, yearly: 50000,
        features: ["1 admin · 2 utilisateurs", "Cours en direct, caisse, reçus", "Messagerie d'équipe (fichiers légers)", "Sauvegarde automatique"] },
-  P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "10 000 F / mois",
+  P: { name: "Pro", days: 30, admins: 2, users: 5, priceLabel: "10 000 F / mois", monthly: 10000, yearly: 100000,
        features: ["2 admins · 5 utilisateurs", "Rapports détaillés + Export Excel", "Messagerie : médias jusqu'à 15 Mo · 2 Go", "Postes & permissions personnalisés", "Tout le Standard inclus"] },
-  R: { name: "Premium", days: 365, admins: 99, users: 99, priceLabel: "100 000 F / an",
-       features: ["Admins & utilisateurs illimités", "1 an inclus", "Messagerie : médias jusqu'à 50 Mo · 10 Go", "Toutes les fonctions"] },
+  R: { name: "Premium", days: 365, admins: 99, users: 99, priceLabel: "15 000 F / mois", monthly: 15000, yearly: 150000,
+       features: ["Admins & utilisateurs illimités", "Messagerie : médias jusqu'à 50 Mo · 10 Go", "Postes & permissions personnalisés", "Toutes les fonctions"] },
 };
 
 // Fonctions réservées : l'Essai (E) débloque tout, Standard (S) non, Pro (P) et Premium (R) oui.
@@ -4820,9 +4820,13 @@ export default function App() {
           {PAID_FORMULAS.map((k) => {
             const ff = FORMULAS[k];
             const current = license && license.plan === k;
+            const live = LIVE_PRICES && LIVE_PRICES[k];
+            const monthlyAmt = (live && live.amount > 0 && (live.period || "mois") === "mois") ? live.amount : ff.monthly;
+            const showYear = monthlyAmt && !(live && live.amount > 0 && live.period === "an");
             return (
               <div className={`formula ${current ? "formula-current" : ""}`} key={k}>
                 <div className="formula-top"><span className="formula-name">{ff.name}</span><span className="formula-price">{priceLabelOf(k)}</span></div>
+                {showYear && <div className="formula-year">ou {nf.format(monthlyAmt * 10)} F / an · <strong>2 mois offerts</strong></div>}
                 <ul className="formula-feats">{ff.features.map((x, i) => <li key={i}>{x}</li>)}</ul>
                 {current
                   ? <button className="btn btn-line formula-btn" disabled>Formule actuelle</button>
@@ -5408,6 +5412,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .formula-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
 .formula-name { font-family:'Fraunces',serif; font-size:17px; font-weight:600; color:var(--ink); }
 .formula-price { font-size:13px; font-weight:600; color:var(--gold); }
+.formula-year { font-size:11.5px; color:var(--muted); margin-top:3px; }
+.formula-year strong { color:var(--green); }
 .formula-feats { list-style:none; margin:9px 0 12px; padding:0; display:flex; flex-direction:column; gap:5px; }
 .formula-feats li { font-size:12.5px; color:var(--muted); padding-left:16px; position:relative; }
 .formula-feats li::before { content:"✓"; position:absolute; left:0; color:var(--green); font-weight:700; }
