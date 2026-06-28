@@ -1824,6 +1824,20 @@ function PaymentsModal({ shop, onClose }) {
   );
 }
 
+function DeleteShopModal({ shop, onCancel, onConfirm }) {
+  const [txt, setTxt] = useState("");
+  const ok = txt.trim() === (shop.name || "").trim();
+  return (
+    <Modal title="Supprimer définitivement cette boutique ?" onClose={onCancel}
+      footer={<><button className="btn btn-ghost" onClick={onCancel}>Annuler</button><button className="btn btn-clay" disabled={!ok} onClick={onConfirm}>Supprimer définitivement</button></>}>
+      <p className="muted small" style={{ marginTop: 0, lineHeight: 1.5 }}>
+        Tu vas supprimer <strong>« {shop.name} »</strong> et <strong>toutes ses données</strong> (ventes, stock, clients, caisse, messages, abonnement, paiements). <strong>Cette action est irréversible.</strong>
+      </p>
+      <p className="muted small" style={{ margin: "10px 0 6px" }}>Pour confirmer, tape le nom exact de la boutique :</p>
+      <input className="input" value={txt} onChange={(e) => setTxt(e.target.value)} placeholder={shop.name} autoFocus />
+    </Modal>
+  );
+}
 function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [shops, setShops] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -1832,6 +1846,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const [allowed, setAllowed] = useState(null); // null = en cours, true, false
   const [modal, setModal] = useState(null); // null | { mode:"create" } | { mode:"renew", shop }
   const [confirmShop, setConfirmShop] = useState(null);
+  const [deleteShop, setDeleteShop] = useState(null); // boutique en cours de suppression
   const [notice, setNotice] = useState(null);
 
   const load = useCallback(async () => {
@@ -1899,6 +1914,12 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
   const toggleStatus = (shop) => {
     const next = shop.status === "suspended" ? "active" : "suspended";
     setConfirmShop({ shop, next });
+  };
+  const doDeleteShop = async (shop) => {
+    const { error } = await supabase.rpc("delete_shop", { p_shop: shop.id });
+    if (error) { setNotice("Suppression impossible : " + (error.message || "vérifie ta connexion.")); return; }
+    setDeleteShop(null);
+    await load();
   };
 
   const statusOf = (s) => {
@@ -2023,6 +2044,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
                   <button className="btn btn-line" onClick={() => setModal({ mode: "payments", shop: s })}>Paiements</button>
                   <button className="btn btn-line" onClick={() => setModal({ mode: "renew", shop: s })}><RefreshCw size={15} /> Renouveler</button>
                   <button className={`btn ${s.status === "suspended" ? "btn-gold" : "btn-line"}`} onClick={() => toggleStatus(s)}>{s.status === "suspended" ? "Réactiver" : "Suspendre"}</button>
+                  <button className="btn btn-line danger" onClick={() => setDeleteShop(s)}><Trash2 size={15} /> Supprimer</button>
                 </div>
               </div>
             );
@@ -2038,6 +2060,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
       {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
       {confirmShop && <ConfirmModal title={confirmShop.next === "suspended" ? "Suspendre cette boutique ?" : "Réactiver cette boutique ?"} message={confirmShop.next === "suspended" ? `« ${confirmShop.shop.name} » : l'accès sera bloqué jusqu'à réactivation.` : `« ${confirmShop.shop.name} » : l'accès sera rétabli.`} okLabel={confirmShop.next === "suspended" ? "Suspendre" : "Réactiver"} danger={confirmShop.next === "suspended"} onCancel={() => setConfirmShop(null)} onOk={() => { const c = confirmShop; setConfirmShop(null); doToggleStatus(c.shop, c.next); }} />}
+      {deleteShop && <DeleteShopModal shop={deleteShop} onCancel={() => setDeleteShop(null)} onConfirm={() => doDeleteShop(deleteShop)} />}
       {notice && <NoticeModal message={notice} onClose={() => setNotice(null)} />}
     </div>
   );
