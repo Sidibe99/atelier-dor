@@ -18,6 +18,7 @@ const nf = new Intl.NumberFormat("fr-FR");
 const fcfa = (n) => `${nf.format(Math.round(n || 0))} F`;
 const fcfaLong = (n) => `${nf.format(Math.round(n || 0))} FCFA`;
 const g = (n) => `${nf.format(Math.round((n || 0) * 100) / 100)} g`;
+const dec = (n, d = 2) => (n || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const uid = () => Math.random().toString(36).slice(2, 9);
 const iso = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
@@ -637,7 +638,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
           <Field label="FCFA → grammes"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></Field>
           <Field label="= Poids"><div className="input input-ro num">{g(aGrams)}</div></Field>
         </div>
-        <p className="src-note">Cours mondial : {nf.format(Math.round(spot))} $/once · taux : {nf.format(Math.round(rate))} F/$ · or pur : {fcfa(perGram24)}/g.</p>
+        <p className="src-note">Cours mondial : {dec(spot)} $/once · taux : {dec(rate)} F/$ · or pur : {fcfa(perGram24)}/g.</p>
       </div>
 
       <div className="card">
@@ -676,7 +677,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse }) {
         <Field label="Vers"><select className="input" value={cvTo} onChange={(e) => setCvTo(e.target.value)}>{CUR.map((c) => <option key={c.k} value={c.k}>{c.n}</option>)}</select></Field>
       </div>
       <button className="btn btn-line" onClick={cvSwap} style={{ marginTop: 4 }}>⇅ Inverser les devises</button>
-      <p className="src-note">1 $ = {nf.format(Math.round(rate))} F (taux en direct) · 1 € = 655,957 F (parité fixe FCFA).</p>
+      <p className="src-note">1 $ = {dec(rate)} F (taux en direct) · 1 € = 655,957 F (parité fixe FCFA).</p>
     </div>
     </>
   );
@@ -4471,8 +4472,8 @@ export default function App() {
           <p className="ch-sub">Cours mondial converti en FCFA — actualisé automatiquement. Alimente les prix de toute la boutique.</p>
         </div>
         <div className="cours-grid">
-          <div className="stat"><div className="stat-ico"><Globe size={15} /></div><span className="stat-lab">Cours mondial</span><span className="stat-val">{nf.format(Math.round(spot))} $<small>/once</small> <span className="stat-sep">·</span> {nf.format(Math.round(spot / OZ))} $<small>/g</small></span></div>
-          <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{nf.format(Math.round(rate))}<small> F</small></span></div>
+          <div className="stat"><div className="stat-ico"><Globe size={15} /></div><span className="stat-lab">Cours mondial</span><span className="stat-val">{dec(spot)} $<small>/once</small> <span className="stat-sep">·</span> {dec(spot / OZ)} $<small>/g</small></span></div>
+          <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{dec(rate)}<small> F</small></span></div>
           <div className="stat hl"><div className="stat-ico gold"><Coins size={15} /></div><span className="stat-lab">Or pur 24K</span><span className="stat-val">{fcfa(perGram24)}<small>/g</small></span></div>
         </div>
         <div className="ch-foot">
@@ -4511,8 +4512,8 @@ export default function App() {
           <Slider label="Marge sur rachat" value={mAchat} set={setMAchat} max={20} />
         </div>
         <div className="manual">
-          <Field label="Cours mondial (USD/once)"><input className="input num" type="number" value={Math.round(spot)} onChange={(e) => setSpot(Number(e.target.value) || 0)} /></Field>
-          <Field label="Taux USD → FCFA"><input className="input num" type="number" value={Math.round(rate)} onChange={(e) => setRate(Number(e.target.value) || 0)} /></Field>
+          <Field label="Cours mondial (USD/once)"><input className="input num" type="number" step="0.01" value={Math.round(spot * 100) / 100} onChange={(e) => setSpot(Number(e.target.value) || 0)} /></Field>
+          <Field label="Taux USD → FCFA"><input className="input num" type="number" step="0.01" value={Math.round(rate * 100) / 100} onChange={(e) => setRate(Number(e.target.value) || 0)} /></Field>
         </div>
         <p className="note-box">Le cours et le taux se remplissent tout seuls en direct ; tu peux les corriger à la main si besoin. Tout le reste — ventes, rachats, valeur du stock — se recalcule à partir d'ici.</p>
         <p className="src-note">Sources en direct : prix de l'or via gold-api.com · taux de change via <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">Exchange Rate API</a>.</p>
