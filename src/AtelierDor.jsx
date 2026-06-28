@@ -2865,6 +2865,8 @@ export default function App() {
   const [onlineReady, setOnlineReady] = useState(false); // boutique en ligne vérifiée et autorisée ?
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
+  const [updateReady, setUpdateReady] = useState(false); // nouvelle version déployée détectée
+  const swRegRef = useRef(null);
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
   const [mediaUpsell, setMediaUpsell] = useState(null); // null | { message }
   const [opsTab, setOpsTab] = useState("sales"); // tableau de bord : "sales" | "purchases"
@@ -3402,8 +3404,45 @@ export default function App() {
   const nowTime = () => new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const me = () => (currentUser ? currentUser.name : "—");
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
-  // enregistre le service worker (rend l'app installable + ouverture hors-ligne)
-  useEffect(() => { if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("/sw.js").catch(() => {}); } catch (e) { /* */ } } }, []);
+  // enregistre le service worker + détecte les nouvelles versions déployées
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    // bundle (fichier JS) actuellement chargé, pour repérer un nouveau déploiement même si sw.js n'a pas changé
+    const curScript = document.querySelector('script[type="module"][src*="/assets/"]');
+    const baseSrc = curScript ? curScript.getAttribute("src") : null;
+    const watchWorker = (sw) => {
+      if (!sw) return;
+      sw.addEventListener("statechange", () => { if (sw.state === "installed" && navigator.serviceWorker.controller) setUpdateReady(true); });
+    };
+    try {
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        swRegRef.current = reg;
+        if (reg.waiting && navigator.serviceWorker.controller) setUpdateReady(true);
+        reg.addEventListener("updatefound", () => watchWorker(reg.installing));
+      }).catch(() => {});
+    } catch (e) { /* */ }
+    let reloaded = false;
+    const onCtrl = () => { if (reloaded) return; reloaded = true; window.location.reload(); };
+    navigator.serviceWorker.addEventListener("controllerchange", onCtrl);
+    const checkBundle = async () => {
+      if (!baseSrc) return;
+      try {
+        const res = await fetch("/index.html", { cache: "no-store" });
+        const html = await res.text();
+        if (html && html.indexOf(baseSrc) === -1) setUpdateReady(true);
+      } catch (e) { /* hors ligne */ }
+    };
+    const check = () => { if (swRegRef.current) swRegRef.current.update().catch(() => {}); checkBundle(); };
+    const iv = setInterval(check, 90000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); navigator.serviceWorker.removeEventListener("controllerchange", onCtrl); };
+  }, []);
+  const applyUpdate = () => {
+    const reg = swRegRef.current;
+    if (reg && reg.waiting) { reg.waiting.postMessage({ type: "SKIP_WAITING" }); setTimeout(() => window.location.reload(), 800); }
+    else window.location.reload();
+  };
 
   const chatUpsell = (info) => {
     const plan = license ? license.plan : "S";
@@ -4981,6 +5020,15 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
+      {updateReady && (
+        <div className="update-bar">
+          <span className="update-txt"><RefreshCw size={15} /> Une nouvelle version est disponible.</span>
+          <div className="update-acts">
+            <button className="btn btn-xs btn-ghost" onClick={() => setUpdateReady(false)}>Plus tard</button>
+            <button className="btn btn-xs btn-gold" onClick={applyUpdate}>Mettre à jour</button>
+          </div>
+        </div>
+      )}
       <ChatWidget messages={messages} reads={reads} people={users.filter((u) => u.id !== currentUser.id)} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} unreadMap={chatUnreadMap} onSeen={markSeen} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
     </div>
   );
@@ -5499,6 +5547,10 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chip-on { background:var(--gold); color:#fff; border-color:var(--gold); }
 .chip.on { background:var(--gold); color:#fff; border-color:var(--gold); }
 .chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
+.update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
+.update-txt { display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:600; }
+.update-acts { display:flex; gap:8px; flex-shrink:0; }
+.update-bar .btn-ghost { color:#e9dcc2; }
 .jrnl .tl-body { padding-bottom:14px; }
 .jrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .jdetail { color:var(--ink); }
