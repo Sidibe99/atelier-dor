@@ -888,21 +888,25 @@ function ExpenseModal({ item, onClose, onSave }) {
   );
 }
 
-function SalaryModal({ users, onClose, onSave }) {
-  const names = (users || []).map((u) => u.name).filter(Boolean);
-  const [name, setName] = useState(names[0] || "");
+function SalaryModal({ names, onClose, onSave }) {
+  const list = (names || []).filter(Boolean);
+  const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [pay, setPay] = useState("Espèces");
   const [month, setMonth] = useState("");
-  const valid = name && amount;
+  const valid = name.trim() && amount;
   return (
     <Modal title="Verser un salaire" sub="Enregistré comme dépense (catégorie Salaire)" onClose={onClose}
-      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ name, amount: parseFloat(amount) || 0, pay, month: month.trim() })}>Enregistrer le versement</button></div>}>
+      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ name: name.trim(), amount: parseFloat(amount) || 0, pay, month: month.trim() })}>Enregistrer le versement</button></div>}>
       <Field label="Employé">
-        {names.length === 0
-          ? <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de l'employé" />
-          : <select className="input" value={name} onChange={(e) => setName(e.target.value)}>{names.map((n) => <option key={n}>{n}</option>)}</select>}
+        <input className="input" list="salary-emps" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de l'employé" />
+        {list.length > 0 && <datalist id="salary-emps">{list.map((n) => <option key={n} value={n} />)}</datalist>}
       </Field>
+      {list.length > 0 && (
+        <div className="chip-row">
+          {list.map((n) => <button key={n} type="button" className={`chip ${name === n ? "on" : ""}`} onClick={() => setName(n)}>{n}</button>)}
+        </div>
+      )}
       <div className="grid2">
         <Field label="Montant"><input className="input num" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" /></Field>
         <Field label="Paiement"><select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select></Field>
@@ -2854,6 +2858,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSeen, setChatSeen] = useState({}); // { all: ts, [userId]: ts }
   const [users, setUsers] = useState(seedUsers);
+  const [teamMembers, setTeamMembers] = useState([]); // vraie équipe en ligne (profiles Supabase)
   const [currentUser, setCurrentUser] = useState(null);
   const [authUser, setAuthUser] = useState(null);   // compte Supabase connecté (ou null)
   const [authReady, setAuthReady] = useState(false); // session en ligne restaurée ?
@@ -3111,6 +3116,18 @@ export default function App() {
 
   // au changement de boutique connectée, on rebascule en "non prêt" (réhydratation)
   useEffect(() => { setDataReady(false); dataShopRef.current = null; pushedRef.current = {}; lastPullRef.current = null; }, [currentUser ? currentUser.shopId : null]);
+  useEffect(() => {
+    const sid = currentUser ? currentUser.shopId : null;
+    if (!sid) { setTeamMembers([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("profiles").select("name, role").eq("shop_id", sid);
+        if (!error && alive) setTeamMembers(data || []);
+      } catch (e) { /* hors ligne : on garde la liste vide */ }
+    })();
+    return () => { alive = false; };
+  }, [currentUser ? currentUser.shopId : null, netTick]);
 
   const applyRemoteSettingsData = (d) => {
     if (!d) return;
@@ -4891,7 +4908,7 @@ export default function App() {
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
-      {modal?.type === "salary" && <SalaryModal users={users} onClose={() => setModal(null)} onSave={paySalary} />}
+      {modal?.type === "salary" && <SalaryModal names={teamMembers.map((m) => m.name).filter(Boolean)} onClose={() => setModal(null)} onSave={paySalary} />}
       {modal?.type === "pin" && <PinSetModal hasPin={!!pin} onClose={() => setModal(null)} onSave={(cfg) => { savePin(cfg); setModal(null); notify("Code PIN enregistré. Il sera demandé à la prochaine ouverture.", "Sécurité"); }} onRemove={() => { savePin(null); setPinOk(true); setModal(null); notify("Code PIN retiré.", "Sécurité"); }} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
       {backup && <BackupModal mode={backup} json={buildBackupJson()} onClose={() => setBackup(null)} onImport={applyImport} />}
@@ -5480,6 +5497,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chip { padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--muted); font-size:.82rem; font-weight:600; cursor:pointer; transition:.15s; }
 .chip:hover { border-color:var(--gold); }
 .chip-on { background:var(--gold); color:#fff; border-color:var(--gold); }
+.chip.on { background:var(--gold); color:#fff; border-color:var(--gold); }
+.chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
 .jrnl .tl-body { padding-bottom:14px; }
 .jrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .jdetail { color:var(--ink); }
