@@ -4569,16 +4569,16 @@ export default function App() {
         <div className="row2">
           <div className="card">
             <div className="card-head"><h3>Encaissements du jour</h3><span className="muted">paiements + acomptes reçus</span></div>
-            <table className="table">
-              <tbody>
-                <tr><td>Espèces</td><td className="r num">{fcfa(esp)}</td></tr>
-                <tr><td>Wave</td><td className="r num">{fcfa(wave)}</td></tr>
-                <tr><td>Orange Money</td><td className="r num">{fcfa(om)}</td></tr>
-                <tr><td>Banque</td><td className="r num">{fcfa(vir)}</td></tr>
-                <tr><td><strong>Total encaissé</strong></td><td className="r num pos"><strong>{fcfa(encTotal)}</strong></td></tr>
-                <tr><td className="muted small">Valeur vendue (CA du jour)</td><td className="r num muted small">{fcfa(caTotal)}</td></tr>
-              </tbody>
-            </table>
+            <div className="enc-grid">
+              <div className="enc-cell"><span className="enc-lab">Espèces</span><span className="enc-val num">{fcfa(esp)}</span></div>
+              <div className="enc-cell"><span className="enc-lab">Wave</span><span className="enc-val num">{fcfa(wave)}</span></div>
+              <div className="enc-cell"><span className="enc-lab">Orange Money</span><span className="enc-val num">{fcfa(om)}</span></div>
+              <div className="enc-cell"><span className="enc-lab">Banque</span><span className="enc-val num">{fcfa(vir)}</span></div>
+            </div>
+            <div className="enc-sum">
+              <div className="enc-sum-row"><span>Total encaissé</span><span className="num pos">{fcfa(encTotal)}</span></div>
+              <div className="enc-sum-row sub"><span>Valeur vendue (CA du jour)</span><span className="num">{fcfa(caTotal)}</span></div>
+            </div>
             {(() => {
               const vend = [...new Set(todayPays.map((p) => p.by).filter((x) => x && x !== "—"))];
               if (vend.length < 2) return null;
@@ -5507,6 +5507,16 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .tl-body { flex:1; min-width:0; }
 .tl-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
 @media (max-width:560px){ .hist-grid { grid-template-columns:repeat(2,1fr); } }
+.enc-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+.enc-cell { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:9px 11px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.enc-lab { font-size:11.5px; color:var(--muted); line-height:1.25; }
+.enc-val { font-size:15px; font-weight:600; color:var(--text); }
+.enc-sum { display:flex; flex-direction:column; gap:7px; padding-top:10px; border-top:1px solid var(--line); }
+.enc-sum-row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-weight:600; }
+.enc-sum-row .num { font-weight:700; }
+.enc-sum-row.sub { font-weight:400; color:var(--muted); font-size:12px; }
+.enc-sum-row.sub .num { font-weight:400; }
+@media (max-width:560px){ .enc-grid { grid-template-columns:repeat(2,1fr); } }
 
 .btn { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:9px; padding:9px 15px;
   font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; transition:.15s; white-space:nowrap; }
