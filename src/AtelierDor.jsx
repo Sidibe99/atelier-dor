@@ -1033,6 +1033,38 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const timerRef = useRef(null);
+  // pastille déplaçable (comme Messenger)
+  const [fabPos, setFabPos] = useState(() => { try { const v = JSON.parse(localStorage.getItem("atelierdor:fabpos")); return v && typeof v.x === "number" && typeof v.y === "number" ? v : null; } catch (e) { return null; } });
+  const fabRef = useRef(null);
+  const dragRef = useRef({ down: false, moved: false, sx: 0, sy: 0, ox: 0, oy: 0 });
+  const onFabDown = (e) => {
+    const el = fabRef.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    dragRef.current = { down: true, moved: false, sx: e.clientX, sy: e.clientY, ox: r.left, oy: r.top };
+    try { el.setPointerCapture(e.pointerId); } catch (_) { /* */ }
+  };
+  const onFabMove = (e) => {
+    const d = dragRef.current; if (!d.down) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) d.moved = true;
+    if (!d.moved) return;
+    const el = fabRef.current; const w = el.offsetWidth, h = el.offsetHeight;
+    let nx = Math.max(6, Math.min(window.innerWidth - w - 6, d.ox + dx));
+    let ny = Math.max(6, Math.min(window.innerHeight - h - 6, d.oy + dy));
+    setFabPos({ x: nx, y: ny });
+  };
+  const onFabUp = () => {
+    const d = dragRef.current; if (!d.down) return; d.down = false;
+    if (!d.moved) { onToggle(); return; }
+    const el = fabRef.current; const w = el ? el.offsetWidth : 56;
+    setFabPos((p) => { if (!p) return p; const snapX = (p.x + w / 2 < window.innerWidth / 2) ? 8 : window.innerWidth - w - 8; const np = { x: snapX, y: p.y }; try { localStorage.setItem("atelierdor:fabpos", JSON.stringify(np)); } catch (_) { /* */ } return np; });
+  };
+  useEffect(() => {
+    if (!fabPos) return;
+    const onR = () => setFabPos((p) => { if (!p) return p; const el = fabRef.current; const w = el ? el.offsetWidth : 56, h = el ? el.offsetHeight : 56; return { x: Math.max(6, Math.min(window.innerWidth - w - 6, p.x)), y: Math.max(6, Math.min(window.innerHeight - h - 6, p.y)) }; });
+    window.addEventListener("resize", onR);
+    return () => window.removeEventListener("resize", onR);
+  }, [fabPos]);
   const visible = messages.filter((m) => {
     if (activeChat === "all") return !m.to || m.to === "all";
     return (m.userId === myId && m.to === activeChat) || (m.userId === activeChat && m.to === myId);
@@ -1134,7 +1166,7 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
   const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   return (
     <>
-      <button className="chat-fab" onClick={onToggle} aria-label="Messagerie">
+      <button ref={fabRef} className="chat-fab" onPointerDown={onFabDown} onPointerMove={onFabMove} onPointerUp={onFabUp} style={fabPos ? { left: fabPos.x + "px", top: fabPos.y + "px", right: "auto", bottom: "auto" } : undefined} aria-label="Messagerie">
         {open ? <X size={22} /> : <MessageCircle size={24} />}
         {!open && unread > 0 && <span className="chat-badge">{unread > 9 ? "9+" : unread}</span>}
       </button>
@@ -3906,9 +3938,10 @@ export default function App() {
   const isPhone = typeof navigator !== "undefined" && /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "");
   const showInstallBar = currentUser && !installedPWA && !installDismissed && (installPrompt || isIosDevice) && isPhone;
 
-  // empêche la page du fond de défiler quand le menu latéral est ouvert (fix iPhone)
+  // empêche la page du fond de défiler quand le menu OU le chat (téléphone) est ouvert (fix iPhone)
   useEffect(() => {
-    if (!navOpen) return;
+    const lock = navOpen || (chatOpen && isPhone);
+    if (!lock) return;
     const y = window.scrollY || window.pageYOffset || 0;
     const b = document.body;
     const prev = { position: b.style.position, top: b.style.top, left: b.style.left, right: b.style.right, width: b.style.width, overflow: b.style.overflow };
@@ -3917,7 +3950,7 @@ export default function App() {
       b.style.position = prev.position; b.style.top = prev.top; b.style.left = prev.left; b.style.right = prev.right; b.style.width = prev.width; b.style.overflow = prev.overflow;
       window.scrollTo(0, y);
     };
-  }, [navOpen]);
+  }, [navOpen, chatOpen, isPhone]);
   const PIE = ["#b8862f", "#d9a441", "#8a6520", "#caa45e", "#6e4f1c"];
 
   /* ----------------------- Excel : export / import ---------------------- */
@@ -5583,7 +5616,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .seg-btn.active { background:var(--card); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.06); }
 
 .overlay { position:fixed; inset:0; background:rgba(28,22,17,.45); backdrop-filter:blur(3px);
-  display:grid; place-items:center; z-index:60; padding:18px; }
+  display:grid; place-items:center; z-index:200; padding:18px; }
 .modal { background:var(--paper); border-radius:16px; width:100%; max-width:560px; max-height:92vh;
   overflow:auto; box-shadow:0 24px 60px rgba(28,22,17,.3); }
 .modal-head { display:flex; justify-content:space-between; align-items:flex-start; padding:18px 20px 12px; }
@@ -5837,7 +5870,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .top-actions { margin-left:auto; }
   .clock-box { align-items:flex-start; order:4; }
   .clock-time { font-size:21px; }
-  .card { overflow-x:auto; }
+  .card { overflow-x:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
   .cours-ticker { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .table { min-width:540px; }
   .table.fit { min-width:0; }
@@ -5929,7 +5962,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .shake { animation:shake .4s; }
 @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
 .lock-delay { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
-.chat-fab { position:fixed; right:22px; bottom:calc(22px + env(safe-area-inset-bottom, 0px)); width:60px; height:60px; border-radius:50%; border:none; background:linear-gradient(150deg,var(--gold),var(--gold2,#9a6f1f)); color:#fff; box-shadow:0 8px 24px rgba(184,134,47,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:70; transition:transform .15s, box-shadow .15s; }
+.chat-fab { position:fixed; right:22px; bottom:calc(22px + env(safe-area-inset-bottom, 0px)); width:60px; height:60px; border-radius:50%; border:none; background:linear-gradient(150deg,var(--gold),var(--gold2,#9a6f1f)); color:#fff; box-shadow:0 8px 24px rgba(184,134,47,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:70; transition:box-shadow .15s; touch-action:none; user-select:none; }
 .chat-fab:hover { transform:translateY(-2px) scale(1.04); box-shadow:0 12px 30px rgba(184,134,47,.55); }
 .chat-fab:active { transform:scale(.96); }
 .chat-badge { position:absolute; top:-2px; right:-2px; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--clay); color:#fff; font-size:.72rem; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid var(--paper); }
@@ -5937,7 +5970,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 @keyframes chatpop { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
 .chat-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--line); color:var(--ink); background:var(--gold-soft); }
 .chat-head strong { font-size:1rem; }
-.chat-list { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }
+.chat-list { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .chat-empty { text-align:center; margin:auto; line-height:1.6; }
 .chat-msg { display:flex; flex-direction:column; align-items:flex-start; max-width:82%; }
 .chat-msg.mine { align-self:flex-end; align-items:flex-end; }
