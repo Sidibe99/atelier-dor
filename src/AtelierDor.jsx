@@ -3199,6 +3199,42 @@ export default function App() {
     return () => { alive = false; };
   }, [currentUser ? currentUser.shopId : null, netTick]);
 
+  // rafraîchit automatiquement mes permissions/poste/rôle ET la formule/expiration de la boutique,
+  // pour qu'un changement de droits ou de plan soit pris en compte SANS se reconnecter.
+  useEffect(() => {
+    if (!authUser || !currentUser || !currentUser.shopId) return;
+    let alive = true;
+    const sid = currentUser.shopId;
+    const refresh = async () => {
+      try {
+        const { data: prof } = await supabase.from("profiles").select("role, poste, perms").eq("id", authUser.id).maybeSingle();
+        if (alive && prof) setCurrentUser((p) => {
+          if (!p) return p;
+          const role = prof.role === "admin" ? "patron" : "vendeur";
+          const perms = Array.isArray(prof.perms) ? prof.perms : null;
+          const poste = prof.poste || "";
+          if (p.role === role && p.poste === poste && JSON.stringify(p.perms) === JSON.stringify(perms)) return p;
+          return { ...p, role, poste, perms };
+        });
+        const { data: sh } = await supabase.from("shops").select("plan, expiry, status").eq("id", sid).maybeSingle();
+        if (alive && sh) setLicense((l) => {
+          const expiry = sh.expiry ? new Date(sh.expiry) : null;
+          const plan = sh.plan || "S";
+          if (l && l.plan === plan && String(l.expiry || "") === String(expiry || "")) return l;
+          return { valid: true, plan, lifetime: false, expiry, code: "online" };
+        });
+      } catch (e) { /* hors-ligne : on conserve l'état courant */ }
+    };
+    refresh();
+    const iv = setInterval(refresh, 60000);
+    const onFocus = () => refresh();
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { alive = false; clearInterval(iv); window.removeEventListener("focus", onFocus); window.removeEventListener("online", onFocus); document.removeEventListener("visibilitychange", onVis); };
+  }, [authUser ? authUser.id : null, currentUser ? currentUser.id : null, currentUser ? currentUser.shopId : null]);
+
   const applyRemoteSettingsData = (d) => {
     if (!d) return;
     if (typeof d.prime === "number") setPrime(d.prime);
