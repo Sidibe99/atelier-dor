@@ -2508,6 +2508,82 @@ function buildReceiptText(d, shop) {
   return L.join("\n");
 }
 
+// --- QR code (carte de contact vCard) : librairie charg\u00e9e \u00e0 la demande, rendu local (hors-ligne friendly) ---
+let _qrLib = null, _qrLoading = null;
+function loadQrLib() {
+  if (_qrLib) return Promise.resolve(_qrLib);
+  if (typeof window !== "undefined" && window.qrcode) { _qrLib = window.qrcode; return Promise.resolve(_qrLib); }
+  if (_qrLoading) return _qrLoading;
+  _qrLoading = new Promise((resolve) => {
+    try {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+      s.async = true;
+      s.onload = () => { _qrLib = (typeof window !== "undefined" && window.qrcode) || null; resolve(_qrLib); };
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+    } catch (e) { resolve(null); }
+  });
+  return _qrLoading;
+}
+function vcardFor(shop) {
+  const name = (shop && shop.name) || "Atelier d'Or";
+  const tel = (shop && shop.phone) || "";
+  const adr = (shop && shop.addr) || "";
+  return "BEGIN:VCARD\nVERSION:3.0\nFN:" + name + "\nORG:" + name +
+    (tel ? "\nTEL;TYPE=CELL:" + tel : "") + (adr ? "\nADR:;;" + adr + ";;;;" : "") + "\nEND:VCARD";
+}
+function qrSummaryFor(data, shop) {
+  const L = [];
+  L.push((shop && shop.name) || "Atelier d'Or");
+  if (shop && shop.addr) L.push(shop.addr);
+  if (shop && shop.phone) L.push("Tel: " + shop.phone);
+  L.push("");
+  L.push((data.kind === "sale" ? "Recu de vente" : "Bordereau d'achat") + " N " + data.no);
+  L.push(data.date + (data.time ? " " + data.time : ""));
+  if (data.client) L.push("Client: " + data.client);
+  L.push("Total: " + fcfa(data.total));
+  if (data.balance > 0) {
+    L.push("Paye: " + fcfa(data.paid));
+    L.push("Reste du: " + fcfa(data.balance));
+    L.push("Statut: PARTIEL");
+  } else {
+    L.push("Paye: " + fcfa(data.total));
+    L.push("Statut: PAYE INTEGRALEMENT");
+  }
+  return L.join("\n");
+}
+async function qrMatrix(text) {
+  const lib = await loadQrLib();
+  if (!lib) return null;
+  try {
+    const qr = lib(0, "M");
+    qr.addData(text); qr.make();
+    const n = qr.getModuleCount();
+    const cells = [];
+    for (let r = 0; r < n; r++) { const row = []; for (let c = 0; c < n; c++) row.push(qr.isDark(r, c)); cells.push(row); }
+    return { n, cells };
+  } catch (e) { return null; }
+}
+function QrContact({ data, shop, size = 96 }) {
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    qrMatrix(qrSummaryFor(data, shop)).then((r) => { if (alive) setM(r); });
+    return () => { alive = false; };
+  }, [data ? data.no : "", data ? data.total : 0, data ? data.balance : 0, shop ? shop.name : "", shop ? shop.phone : ""]);
+  if (!m) return null;
+  const cell = size / m.n;
+  const rects = [];
+  for (let r = 0; r < m.n; r++) for (let c = 0; c < m.n; c++) if (m.cells[r][c]) rects.push(<rect key={r + "-" + c} x={(c * cell).toFixed(2)} y={(r * cell).toFixed(2)} width={(cell + 0.4).toFixed(2)} height={(cell + 0.4).toFixed(2)} fill="#1c1611" />);
+  return (
+    <div className="rc-qr">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}><rect width={size} height={size} fill="#fff" />{rects}</svg>
+      <div className="rc-qr-cap">Scannez pour voir le détail du reçu</div>
+    </div>
+  );
+}
+
 function ReceiptCard({ data, shop }) {
   const docLogo = shop.docLogo || shop.logo;
   return (
@@ -2539,6 +2615,7 @@ function ReceiptCard({ data, shop }) {
       <div className="rc-sep dashed" />
       <div className="rc-foot">Merci de votre confiance</div>
       <div className="rc-foot tiny">Prix selon le cours du jour · titre d'or garanti</div>
+      <QrContact data={data} shop={shop} size={112} />
     </div>
   );
 }
@@ -2552,7 +2629,7 @@ function rcSep(color, W, P, dashed) {
   };
 }
 function receiptImageBlob(data, shop) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const W = 680, P = 44, scale = 2;
     const INK = "#1c1611", MUT = "#8a7d68", CLAY = "#9c4a35", LINE = "#e6ddcc", GOLD = "#b8862f";
     const rows = [];
@@ -2585,6 +2662,18 @@ function receiptImageBlob(data, shop) {
     push(28, rcSep(LINE, W, P, true));
     push(28, (ctx, y) => { ctx.fillStyle = GOLD; ctx.font = "700 16px Arial"; ctx.textAlign = "center"; ctx.fillText("Merci de votre confiance", W / 2, y + 18); });
     push(22, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "13px Arial"; ctx.textAlign = "center"; ctx.fillText((shop.name || "Atelier d'Or") + (shop.phone ? " · " + shop.phone : ""), W / 2, y + 15); });
+
+    const qr = await qrMatrix(qrSummaryFor(data, shop));
+    if (qr) {
+      const QS = 168;
+      push(20, (ctx, y) => { ctx.fillStyle = MUT; ctx.font = "13px Arial"; ctx.textAlign = "center"; ctx.fillText("Scannez pour voir le détail du reçu", W / 2, y + 14); });
+      push(QS + 16, (ctx, y) => {
+        const cell = QS / qr.n, ox = (W - QS) / 2, oy = y + 6;
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(ox - 8, oy - 8, QS + 16, QS + 16);
+        ctx.fillStyle = "#1c1611";
+        for (let r = 0; r < qr.n; r++) for (let c = 0; c < qr.n; c++) if (qr.cells[r][c]) ctx.fillRect(ox + c * cell, oy + r * cell, cell + 0.5, cell + 0.5);
+      });
+    }
 
     const render = (logoImg, lw, lh) => {
       const logoH = lh ? lh + 14 : 0;
@@ -5491,6 +5580,9 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .rc-note { font-size:11.5px; color:#666; font-style:italic; margin-top:8px; }
 .rc-foot { text-align:center; font-size:11.5px; color:#555; margin-top:4px; }
 .rc-foot.tiny { font-size:10px; color:#999; margin-top:2px; }
+.rc-qr { display:flex; flex-direction:column; align-items:center; gap:5px; margin-top:12px; }
+.rc-qr svg { border-radius:6px; }
+.rc-qr-cap { font-size:10px; color:#999; }
 .rc-strong { font-weight:700; }
 .rc-strong span:first-child { font-weight:700; }
 
