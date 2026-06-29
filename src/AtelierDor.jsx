@@ -3,7 +3,7 @@ import {
   LayoutGrid, ShoppingCart, ArrowDownLeft, Package, Users, BarChart3,
   Settings, Plus, X, Pencil, Trash2, Search, Coins, Scale, Gem, Wallet,
   TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer,
-  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History, MessageCircle, Send,
+  RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History, MessageCircle, Send, Check,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -2857,6 +2857,37 @@ function InstallButton() {
     </div>
   );
 }
+const PAGE_NOTES = {
+  sales: "Enregistre ici chaque vente (or, bijou ou divers). Le prix se base sur le cours du jour. Tu peux encaisser la totalité ou laisser un reste à payer (crédit).",
+  buy: "Achats d'or = rachats clients : quand un client te vend de l'or, enregistre-le ici. Le prix de rachat se calcule sur le cours du jour, moins ta marge.",
+  stock: "Ton inventaire : or brut, bijoux et divers. La valeur de l'or se met à jour toute seule avec le cours. Ajoute un article avec son poids et son carat.",
+  clients: "Ton carnet de clients. Note leur nom et téléphone pour suivre leurs achats et crédits, et leur envoyer des rappels par WhatsApp.",
+  credits: "Suis ce que les clients te doivent (ventes à crédit) et ce que tu dois (rachats non réglés). Tu peux relancer par WhatsApp en un clic.",
+  caisse: "Compte ta caisse en fin de journée : l'app compare l'argent attendu avec ce que tu as réellement, et signale tout écart.",
+  depenses: "Enregistre tes dépenses (loyer, électricité, salaires…). Elles sont déduites de ton bénéfice dans les rapports.",
+  cours: "Le cours mondial de l'or en direct, converti en FCFA. Règle ta prime et tes marges ici : tous tes prix de vente et de rachat en découlent.",
+  calc: "Calcule vite la valeur d'un or selon son poids et son carat, ou convertis des devises. Pratique au comptoir.",
+  reports: "Tes chiffres : chiffre d'affaires, bénéfices, meilleurs produits et performance par vendeur, sur la période de ton choix.",
+  journal: "Retrouve ici toutes tes opérations (ventes, achats, paiements, clôtures) avec la date et l'auteur. Clique une ligne pour voir le détail ou le reçu.",
+  settings: "Règle le nom et le logo de ta boutique, ton mot de passe, tes utilisateurs, l'installation de l'app et tes sauvegardes.",
+  equipe: "Crée les comptes de tes employés, puis via « Accès » choisis leur poste et exactement ce que chacun peut voir ou modifier.",
+  abo: "Ta formule actuelle et sa date de fin. Compare les formules et contacte ton revendeur pour renouveler ou changer d'offre.",
+};
+
+function PageNote({ id, children }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { let on = true; (async () => { try { const v = await STORE.get("atelierdor:note:" + id); if (on && v !== "1") setShow(true); } catch (e) { if (on) setShow(true); } })(); return () => { on = false; }; }, [id]);
+  if (!show) return null;
+  const hide = () => { setShow(false); try { STORE.set("atelierdor:note:" + id, "1"); } catch (e) { /* */ } };
+  return (
+    <div className="page-note">
+      <span className="page-note-ico">💡</span>
+      <div className="page-note-txt">{children}</div>
+      <button className="page-note-x" onClick={hide} title="J'ai compris"><X size={15} /></button>
+    </div>
+  );
+}
+
 export default function App() {
   const [view, setView] = useState("dash");
   const [navOpen, setNavOpen] = useState(false);
@@ -2901,6 +2932,7 @@ export default function App() {
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [updateReady, setUpdateReady] = useState(false); // nouvelle version déployée détectée
   const [expiryDismissed, setExpiryDismissed] = useState(false); // alerte d'expiration masquée pour la session
+  const [guideDismissed, setGuideDismissed] = useState(false); // guide de démarrage masqué
   const swRegRef = useRef(null);
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
   const [mediaUpsell, setMediaUpsell] = useState(null); // null | { message }
@@ -3441,6 +3473,8 @@ export default function App() {
   const log = (kind, verb, detail) => setJournal((arr) => [{ id: uid(), date: TODAY, time: nowTime(), by: me(), kind, verb, detail }, ...arr].slice(0, 1000));
   // retire le splash de chargement (logo Au dans index.html) une fois l'app affichée
   useEffect(() => { const b = typeof document !== "undefined" && document.getElementById("boot"); if (b) { b.style.opacity = "0"; setTimeout(() => { try { b.remove(); } catch (e) { /* */ } }, 350); } }, []);
+  useEffect(() => { (async () => { try { const v = await STORE.get("atelierdor:guidedone"); if (v === "1") setGuideDismissed(true); } catch (e) { /* */ } })(); }, []);
+  const dismissGuide = () => { setGuideDismissed(true); try { STORE.set("atelierdor:guidedone", "1"); } catch (e) { /* */ } };
   // enregistre le service worker + détecte les nouvelles versions déployées
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -3761,8 +3795,34 @@ export default function App() {
     if (lowStock.length) alerts.push({ key: "stock", icon: Package, tone: "clay", text: `${lowStock.length} article${lowStock.length > 1 ? "s" : ""} en stock bas`, sub: lowStock.slice(0, 3).map((d) => `${d.name} (${d.qty || 0})`).join(" · "), act: () => { go("stock"); setStockTab("divers"); } });
     if (lateCredits.length) alerts.push({ key: "credits", icon: Receipt, tone: "clay", text: `${lateCredits.length} créance${lateCredits.length > 1 ? "s" : ""} en retard (+30 jours)`, sub: `${fcfa(lateTotal)} à recouvrer`, act: () => go("credits") });
     if (isPatron && caisseAlert) alerts.push({ key: "caisse", icon: Wallet, tone: caisseAlert.ecart < 0 ? "clay" : "gold", text: caisseAlert.ecart < 0 ? `Manquant à la dernière clôture : ${fcfa(Math.abs(caisseAlert.ecart))}` : `Excédent à la dernière clôture : ${fcfa(caisseAlert.ecart)}`, sub: `Clôture du ${dateFr(caisseAlert.date)}`, act: () => go("caisse") });
+    const guideSteps = [
+      { id: "stock", label: "Ajouter ton stock d'or ou tes bijoux", done: gold.length > 0 || divers.length > 0, view: "stock", cta: "Aller au stock" },
+      { id: "client", label: "Enregistrer un premier client", done: clients.length > 0, view: "clients", cta: "Ajouter un client" },
+      { id: "sale", label: "Faire ta première vente", done: sales.length > 0, view: "sales", cta: "Nouvelle vente" },
+      { id: "team", label: "Créer un compte employé", done: (teamMembers.length || 0) > 1, view: "equipe", cta: "Gérer l'équipe" },
+    ];
+    const guideCount = guideSteps.filter((s) => s.done).length;
+    const showGuide = isPatron && !guideDismissed && guideCount < guideSteps.length;
     return (
     <>
+      {showGuide && (
+        <div className="card guide-card">
+          <div className="guide-head">
+            <div><h3 className="guide-title">👋 Bienvenue ! Quelques étapes pour bien démarrer</h3><p className="muted small" style={{ margin: "2px 0 0" }}>{guideCount} / {guideSteps.length} terminé</p></div>
+            <button className="icon-btn" onClick={dismissGuide} title="Masquer le guide"><X size={16} /></button>
+          </div>
+          <div className="guide-bar"><div className="guide-fill" style={{ width: `${(guideCount / guideSteps.length) * 100}%` }} /></div>
+          <div className="guide-steps">
+            {guideSteps.map((s) => (
+              <div key={s.id} className={`guide-step ${s.done ? "done" : ""}`}>
+                <span className="guide-check">{s.done ? <Check size={14} /> : ""}</span>
+                <span className="guide-lab">{s.label}</span>
+                {!s.done && <button className="btn btn-xs btn-gold" onClick={() => go(s.view)}>{s.cta}</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {license && license.plan === "E" && (
         <button className="trial-banner" onClick={() => go("abo")}>
           <span className="trial-banner-dot" />
@@ -4986,7 +5046,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="content">{VIEWS[cur]()}</main>
+        <main className="content">{cur !== "dash" && PAGE_NOTES[cur] && <PageNote id={cur}>{PAGE_NOTES[cur]}</PageNote>}{VIEWS[cur]()}</main>
       </div>
 
       {modal?.type === "sale" && <SaleModal prices={prices} gold={gold} divers={divers} clients={clients} init={modal.init} onClose={() => setModal(null)} onSave={addSale} onNewArticle={() => { go("stock"); setStockTab("divers"); setModal({ type: "divers" }); }} />}
@@ -5610,6 +5670,23 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
 .update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
 .expiry-bar { position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:121; display:flex; align-items:center; gap:14px; background:var(--clay); color:#fff; padding:9px 14px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:94vw; }
+.guide-card { border:1px solid var(--gold); background:linear-gradient(180deg,var(--gold-soft),var(--card)); }
+.guide-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.guide-title { margin:0; font-size:1rem; }
+.guide-bar { height:6px; border-radius:99px; background:#e7decb; overflow:hidden; margin:10px 0 12px; }
+.guide-fill { height:100%; background:var(--gold); border-radius:99px; transition:width .4s ease; }
+.guide-steps { display:flex; flex-direction:column; gap:8px; }
+.guide-step { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
+.guide-step.done { opacity:.72; background:transparent; }
+.guide-check { width:22px; height:22px; flex-shrink:0; border-radius:50%; border:2px solid var(--line); display:flex; align-items:center; justify-content:center; color:#fff; }
+.guide-step.done .guide-check { background:var(--green); border-color:var(--green); }
+.guide-lab { flex:1; font-size:.9rem; }
+.page-note { display:flex; align-items:flex-start; gap:10px; background:var(--gold-soft); border:1px solid var(--line); border-radius:12px; padding:11px 12px; margin-bottom:14px; }
+.page-note-ico { flex-shrink:0; font-size:15px; line-height:1.5; }
+.page-note-txt { flex:1; font-size:12.8px; line-height:1.5; color:var(--ink2); }
+.page-note-x { flex-shrink:0; background:transparent; border:none; color:var(--muted); cursor:pointer; padding:2px; border-radius:6px; }
+.page-note-x:hover { background:rgba(0,0,0,.06); color:var(--ink); }
+.guide-step.done .guide-lab { text-decoration:line-through; color:var(--muted); }
 .expiry-txt { display:flex; align-items:center; gap:8px; font-size:.88rem; font-weight:600; }
 .expiry-acts { display:flex; gap:8px; flex-shrink:0; }
 .expiry-bar .btn-ghost { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.45); }
