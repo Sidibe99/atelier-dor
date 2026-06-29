@@ -2916,28 +2916,17 @@ function PasswordChange() {
     </div>
   );
 }
-function InstallButton() {
-  const [deferred, setDeferred] = useState(null);
-  const [installed, setInstalled] = useState(false);
+function InstallButton({ prompt, installed, onInstall, isIos }) {
   const [showHelp, setShowHelp] = useState(false);
-  useEffect(() => {
-    const onPrompt = (e) => { e.preventDefault(); setDeferred(e); };
-    const onInstalled = () => { setInstalled(true); setDeferred(null); };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    try { if ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone) setInstalled(true); } catch (e) { /* */ }
-    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
-  }, []);
-  const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
   const install = async () => {
-    if (deferred) { deferred.prompt(); try { await deferred.userChoice; } catch (e) { /* */ } setDeferred(null); }
-    else setShowHelp(true);
+    const ok = onInstall ? await onInstall() : false;
+    if (!ok) setShowHelp(true);
   };
   if (installed) return <p className="muted small" style={{ margin: 0 }}>✓ L'application est déjà installée sur cet appareil.</p>;
   return (
     <div>
       <button className="btn btn-gold" onClick={install}><Download size={15} /> Installer l'application</button>
-      {showHelp && (
+      {(showHelp || (isIos && !prompt)) && (
         <p className="muted small" style={{ margin: "10px 0 0", lineHeight: 1.5 }}>
           {isIos
             ? <>Sur iPhone / iPad : appuie sur le bouton <strong>Partager</strong> (le carré avec une flèche ↑) en bas de Safari, puis choisis <strong>« Sur l'écran d'accueil »</strong>.</>
@@ -2981,6 +2970,9 @@ function PageNote({ id, children }) {
 export default function App() {
   const [view, setView] = useState("dash");
   const [navOpen, setNavOpen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null); // événement beforeinstallprompt capté
+  const [installedPWA, setInstalledPWA] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(false);
   const [gold, setGold] = useState(seedGold);
   const [divers, setDivers] = useState(seedDivers);
   const [clients, setClients] = useState(seedClients);
@@ -3859,6 +3851,59 @@ export default function App() {
     { id: "abo", label: "Abonnement", icon: Wallet },
   ];
   const go = (id) => { setView(id); setNavOpen(false); };
+
+  // --- Bouton/flèche RETOUR : navigue dans l'app au lieu de quitter ---
+  const navStackRef = useRef(["dash"]);
+  const poppingRef = useRef(false);
+  const overlayRef = useRef({ nav: false, modal: false, backup: false });
+  useEffect(() => { overlayRef.current = { nav: navOpen, modal: !!modal, backup: !!backup }; }, [navOpen, modal, backup]);
+  useEffect(() => {
+    if (!currentUser) return;
+    if (poppingRef.current) { poppingRef.current = false; return; }
+    const st = navStackRef.current;
+    if (st[st.length - 1] === view) return;
+    st.push(view);
+    try { window.history.pushState({ adv: view }, ""); } catch (e) { /* */ }
+  }, [view, currentUser]);
+  useEffect(() => {
+    // entrée dans l'app : un état "tampon" pour intercepter le 1er retour
+    if (currentUser) { try { window.history.pushState({ adGuard: 1 }, ""); } catch (e) { /* */ } navStackRef.current = ["dash"]; }
+  }, [currentUser ? currentUser.id : null]);
+  useEffect(() => {
+    const onPop = () => {
+      const ov = overlayRef.current;
+      // 1) fermer le menu latéral
+      if (ov.nav) { setNavOpen(false); try { window.history.pushState({}, ""); } catch (e) { /* */ } return; }
+      // 2) fermer une fenêtre ouverte
+      if (ov.backup) { setBackup(null); try { window.history.pushState({}, ""); } catch (e) { /* */ } return; }
+      if (ov.modal) { setModal(null); try { window.history.pushState({}, ""); } catch (e) { /* */ } return; }
+      // 3) revenir à l'écran précédent
+      const st = navStackRef.current;
+      if (st.length > 1) { st.pop(); poppingRef.current = true; setView(st[st.length - 1]); }
+      // sinon (tableau de bord) : on laisse le retour quitter normalement
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // --- Installation PWA : on capte l'événement dès le chargement (sinon trop tard) ---
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setInstallPrompt(e); };
+    const onInstalled = () => { setInstalledPWA(true); setInstallPrompt(null); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    try { if ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone) setInstalledPWA(true); } catch (e) { /* */ }
+    try { const d = STORE.get("atelierdor:installdismiss"); if (d && d.then) d.then((v) => { if (v === "1") setInstallDismissed(true); }); } catch (e) { /* */ }
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+  const doInstall = async () => {
+    if (installPrompt) { try { installPrompt.prompt(); await installPrompt.userChoice; } catch (e) { /* */ } setInstallPrompt(null); return true; }
+    return false;
+  };
+  const dismissInstall = () => { setInstallDismissed(true); try { STORE.set("atelierdor:installdismiss", "1"); } catch (e) { /* */ } };
+  const isIosDevice = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent || "");
+  const isPhone = typeof navigator !== "undefined" && /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "");
+  const showInstallBar = currentUser && !installedPWA && !installDismissed && (installPrompt || isIosDevice) && isPhone;
   const PIE = ["#b8862f", "#d9a441", "#8a6520", "#caa45e", "#6e4f1c"];
 
   /* ----------------------- Excel : export / import ---------------------- */
@@ -4973,7 +5018,7 @@ export default function App() {
       <div className="card">
         <div className="card-head"><h3><Download size={15} /> Installer l'application</h3><span className="muted">Ordi & téléphone</span></div>
         <p className="muted small" style={{ margin: "0 0 14px" }}>Ajoute Atelier d'Or sur ton écran d'accueil ou ton bureau : ça s'ouvre comme une vraie app, en plein écran, et même sans connexion.</p>
-        <InstallButton />
+        <InstallButton prompt={installPrompt} installed={installedPWA} onInstall={doInstall} isIos={isIosDevice} />
       </div>
 
       <div className="card">
@@ -5255,6 +5300,17 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
+      {showInstallBar && !showExpiryWarn && (
+        <div className="install-bar">
+          <span className="install-txt"><Download size={16} /> {isIosDevice
+            ? <>Ajoute Atelier d'Or à ton écran d'accueil : <strong>Partager</strong> ↑ puis <strong>« Sur l'écran d'accueil »</strong>.</>
+            : <>Installe Atelier d'Or sur ton écran d'accueil.</>}</span>
+          <div className="install-acts">
+            <button className="btn btn-xs btn-ghost" onClick={dismissInstall}>Plus tard</button>
+            {!isIosDevice && <button className="btn btn-xs btn-gold" onClick={doInstall}>Installer</button>}
+          </div>
+        </div>
+      )}
       {showExpiryWarn && (
         <div className="expiry-bar">
           <span className="expiry-txt"><AlertTriangle size={15} /> {daysLeft === 0 ? "Ton abonnement expire aujourd'hui." : `Ton abonnement expire dans ${daysLeft} jour${daysLeft > 1 ? "s" : ""}.`} Pense à le renouveler.</span>
@@ -5296,7 +5352,7 @@ const CSS = `
 .pos{ color:var(--green); } .neg{ color:var(--clay); }
 
 .sidebar { width:248px; background:var(--ink); color:#e9e0d0; display:flex; flex-direction:column;
-  position:fixed; inset:0 auto 0 0; z-index:40; padding:18px 14px; }
+  position:fixed; inset:0 auto 0 0; z-index:40; padding:calc(18px + env(safe-area-inset-top, 0px)) 14px 18px; }
 .brand { display:flex; align-items:center; gap:11px; padding:6px 8px 20px; }
 .brand-mark { width:40px; height:40px; border-radius:10px; display:grid; place-items:center;
   background:var(--ink); color:var(--gold); border:1.5px solid rgba(184,134,47,.55);
@@ -5322,7 +5378,7 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .side-cash span { font-size:11px; color:#a99c84; } .side-cash strong { color:var(--gold2); font-size:16px; }
 
 .main { flex:1; margin-left:248px; min-width:0; display:flex; flex-direction:column; }
-.topbar { display:flex; align-items:center; gap:16px; padding:14px 24px; background:rgba(255,253,248,.85);
+.topbar { display:flex; align-items:center; gap:16px; padding:calc(14px + env(safe-area-inset-top, 0px)) 24px 14px; background:rgba(255,253,248,.85);
   backdrop-filter:blur(8px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20; flex-wrap:wrap; }
 .top-left { display:flex; align-items:center; gap:12px; margin-right:auto; }
 .topbar h1 { font-size:21px; }
@@ -5752,7 +5808,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .grid2 { grid-template-columns:1fr; }
   .manual { grid-template-columns:1fr; }
   .search { display:none; }
-  .topbar { flex-wrap:wrap; gap:10px; padding:12px 14px; }
+  .topbar { flex-wrap:wrap; gap:10px; padding:calc(12px + env(safe-area-inset-top, 0px)) 14px 12px; }
   .top-actions { margin-left:auto; }
   .clock-box { align-items:flex-start; order:4; }
   .clock-time { font-size:21px; }
@@ -5798,8 +5854,14 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chip-on { background:var(--gold); color:#fff; border-color:var(--gold); }
 .chip.on { background:var(--gold); color:#fff; border-color:var(--gold); }
 .chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
-.update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
-.expiry-bar { position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:121; display:flex; align-items:center; gap:14px; background:var(--clay); color:#fff; padding:9px 14px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:94vw; }
+.update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom, 0px)); z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
+.expiry-bar { position:fixed; left:50%; transform:translateX(-50%); top:calc(14px + env(safe-area-inset-top, 0px)); z-index:121; display:flex; align-items:center; gap:14px; background:var(--clay); color:#fff; padding:9px 14px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:94vw; }
+.install-bar { position:fixed; left:50%; transform:translateX(-50%); top:calc(14px + env(safe-area-inset-top, 0px)); z-index:121; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:9px 14px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.28); max-width:94vw; }
+.install-txt { display:flex; align-items:center; gap:8px; font-size:.86rem; font-weight:500; }
+.install-txt strong { color:var(--gold2); }
+.install-acts { display:flex; gap:8px; flex-shrink:0; }
+.install-bar .btn-ghost { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.45); }
+.install-bar .btn-ghost:hover { background:rgba(255,255,255,.14); }
 .guide-card { border:1px solid var(--gold); background:linear-gradient(180deg,var(--gold-soft),var(--card)); }
 .guide-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
 .guide-title { margin:0; font-size:1rem; }
