@@ -1343,6 +1343,8 @@ function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo, onAuthor
   const [err, setErr] = useState("");
   const load = useCallback(async () => {
     setLoading(true); setErr("");
+    const CACHE_KEY = "atelierdor:shopcache:" + authUser.id;
+    const GRACE_DAYS = 7;
     try {
       const { data: prof, error: e1 } = await supabase.from("profiles").select("*").eq("id", authUser.id).maybeSingle();
       if (e1) throw e1;
@@ -1351,8 +1353,22 @@ function ClientGate({ authUser, onSignOut, onExit, resellerPhone, logo, onAuthor
         const { data: sh, error: e2 } = await supabase.from("shops").select("*").eq("id", prof.shop_id).maybeSingle();
         if (e2) throw e2;
         setShop(sh || null);
+        if (sh) { try { await STORE.set(CACHE_KEY, JSON.stringify({ profile: prof, shop: sh, ts: Date.now() })); } catch (e) { /* */ } }
       } else { setShop(null); }
-    } catch (e) { setErr("Impossible de vérifier ta boutique. Vérifie ta connexion."); }
+    } catch (e) {
+      // panne réseau : on réutilise la dernière vérification réussie (tolérance hors-ligne)
+      let used = false;
+      try {
+        const raw = await STORE.get(CACHE_KEY);
+        if (raw) {
+          const c = JSON.parse(raw);
+          if (c && c.ts && c.shop && (Date.now() - c.ts) < GRACE_DAYS * DAY) {
+            setProfile(c.profile || null); setShop(c.shop); used = true;
+          }
+        }
+      } catch (e2) { /* */ }
+      if (!used) setErr("Impossible de vérifier ta boutique. Vérifie ta connexion.");
+    }
     finally { setLoading(false); }
   }, [authUser.id]);
   useEffect(() => { load(); }, [load]);
@@ -2884,6 +2900,7 @@ export default function App() {
   const [pricesVersion, setPricesVersion] = useState(0); // recharge l'affichage quand les prix Supabase arrivent
   const [backup, setBackup] = useState(null); // null | "export" | "import"
   const [updateReady, setUpdateReady] = useState(false); // nouvelle version déployée détectée
+  const [expiryDismissed, setExpiryDismissed] = useState(false); // alerte d'expiration masquée pour la session
   const swRegRef = useRef(null);
   const [upsell, setUpsell] = useState(null); // null | nom de la fonction réservée
   const [mediaUpsell, setMediaUpsell] = useState(null); // null | { message }
@@ -4890,6 +4907,9 @@ export default function App() {
   const canSee = (id) => lvl(id) !== "none";
   const canEdit = (id) => lvl(id) === "edit";
   const seeMargin = isPatron || permLevel(myPerms, "benefices") === "view";
+  const expiryDate = license && license.expiry ? new Date(license.expiry) : null;
+  const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / DAY) : null;
+  const showExpiryWarn = !(license && license.lifetime) && daysLeft !== null && daysLeft >= 0 && daysLeft <= 7 && !expiryDismissed;
   const chatUnreadMap = (() => {
     const map = { all: 0 };
     messages.forEach((m) => {
@@ -5048,6 +5068,15 @@ export default function App() {
       })()}
 
       <div className="print-receipt">{receipt ? <ReceiptCard data={receipt} shop={shop} /> : zView ? <ZCard data={zView} shop={shop} /> : null}</div>
+      {showExpiryWarn && (
+        <div className="expiry-bar">
+          <span className="expiry-txt"><AlertTriangle size={15} /> {daysLeft === 0 ? "Ton abonnement expire aujourd'hui." : `Ton abonnement expire dans ${daysLeft} jour${daysLeft > 1 ? "s" : ""}.`} Pense à le renouveler.</span>
+          <div className="expiry-acts">
+            <button className="btn btn-xs btn-ghost" onClick={() => setExpiryDismissed(true)}>Plus tard</button>
+            {isPatron && <button className="btn btn-xs btn-gold" onClick={() => { setView("abo"); setNavOpen(false); }}>Renouveler</button>}
+          </div>
+        </div>
+      )}
       {updateReady && (
         <div className="update-bar">
           <span className="update-txt"><RefreshCw size={15} /> Une nouvelle version est disponible.</span>
@@ -5580,6 +5609,11 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chip.on { background:var(--gold); color:#fff; border-color:var(--gold); }
 .chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
 .update-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:120; display:flex; align-items:center; gap:14px; background:var(--ink); color:#fff; padding:10px 14px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.28); max-width:92vw; }
+.expiry-bar { position:fixed; left:50%; transform:translateX(-50%); top:14px; z-index:121; display:flex; align-items:center; gap:14px; background:var(--clay); color:#fff; padding:9px 14px; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); max-width:94vw; }
+.expiry-txt { display:flex; align-items:center; gap:8px; font-size:.88rem; font-weight:600; }
+.expiry-acts { display:flex; gap:8px; flex-shrink:0; }
+.expiry-bar .btn-ghost { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.45); }
+.expiry-bar .btn-ghost:hover { background:rgba(255,255,255,.14); }
 .update-txt { display:flex; align-items:center; gap:8px; font-size:.9rem; font-weight:600; }
 .update-acts { display:flex; gap:8px; flex-shrink:0; }
 .update-bar .btn-ghost { background:transparent; color:#fff; border:1px solid rgba(255,255,255,.4); }
