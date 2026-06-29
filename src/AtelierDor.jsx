@@ -3904,6 +3904,19 @@ export default function App() {
   const isIosDevice = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent || "");
   const isPhone = typeof navigator !== "undefined" && /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "");
   const showInstallBar = currentUser && !installedPWA && !installDismissed && (installPrompt || isIosDevice) && isPhone;
+
+  // empêche la page du fond de défiler quand le menu latéral est ouvert (fix iPhone)
+  useEffect(() => {
+    if (!navOpen) return;
+    const y = window.scrollY || window.pageYOffset || 0;
+    const b = document.body;
+    const prev = { position: b.style.position, top: b.style.top, left: b.style.left, right: b.style.right, width: b.style.width, overflow: b.style.overflow };
+    b.style.position = "fixed"; b.style.top = "-" + y + "px"; b.style.left = "0"; b.style.right = "0"; b.style.width = "100%"; b.style.overflow = "hidden";
+    return () => {
+      b.style.position = prev.position; b.style.top = prev.top; b.style.left = prev.left; b.style.right = prev.right; b.style.width = prev.width; b.style.overflow = prev.overflow;
+      window.scrollTo(0, y);
+    };
+  }, [navOpen]);
   const PIE = ["#b8862f", "#d9a441", "#8a6520", "#caa45e", "#6e4f1c"];
 
   /* ----------------------- Excel : export / import ---------------------- */
@@ -5352,7 +5365,8 @@ const CSS = `
 .pos{ color:var(--green); } .neg{ color:var(--clay); }
 
 .sidebar { width:248px; background:var(--ink); color:#e9e0d0; display:flex; flex-direction:column;
-  position:fixed; inset:0 auto 0 0; z-index:40; padding:calc(18px + env(safe-area-inset-top, 0px)) 14px 18px; }
+  position:fixed; inset:0 auto 0 0; z-index:40; padding:calc(18px + env(safe-area-inset-top, 0px)) 14px 18px;
+  overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
 .brand { display:flex; align-items:center; gap:11px; padding:6px 8px 20px; }
 .brand-mark { width:40px; height:40px; border-radius:10px; display:grid; place-items:center;
   background:var(--ink); color:var(--gold); border:1.5px solid rgba(184,134,47,.55);
@@ -5801,7 +5815,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 @media (max-width:760px){
   .sidebar { transform:translateX(-100%); transition:transform .25s; box-shadow:0 0 40px rgba(0,0,0,.3); }
   .sidebar.open { transform:translateX(0); }
-  .scrim { display:block; position:fixed; inset:0; background:rgba(28,22,17,.4); z-index:35; }
+  .scrim { display:block; position:fixed; inset:0; background:rgba(28,22,17,.4); z-index:35; touch-action:none; overscroll-behavior:none; }
   .main { margin-left:0; min-width:0; overflow-x:hidden; }
   .menu-btn { display:grid; width:38px; height:38px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--ink); flex:none; }
   .content { padding:16px; max-width:100%; }
