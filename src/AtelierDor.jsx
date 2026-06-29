@@ -15,9 +15,10 @@ import { LIC_SECRET, MASTER_PW, SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 /* ----------------------------- utilitaires ------------------------------ */
 const nf = new Intl.NumberFormat("fr-FR");
-const fcfa = (n) => `${nf.format(Math.round(n || 0))} F`;
-const fcfaLong = (n) => `${nf.format(Math.round(n || 0))} FCFA`;
-const g = (n) => `${nf.format(Math.round((n || 0) * 100) / 100)} g`;
+const nbsp = (s) => String(s).replace(/\s/g, "\u00a0");
+const fcfa = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0F`;
+const fcfaLong = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0FCFA`;
+const g = (n) => `${nbsp(nf.format(Math.round((n || 0) * 100) / 100))}\u00a0g`;
 const dec = (n, d = 2) => (n || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const uid = () => Math.random().toString(36).slice(2, 9);
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -5360,7 +5361,7 @@ const CSS = `
   font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.45;
 }
 .app h1,.app h2,.app h3 { font-family:'Fraunces',Georgia,serif; font-weight:600; margin:0; letter-spacing:-.01em; }
-.num { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+.num { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .muted { color:var(--muted); } .small{ font-size:12px; } .r{ text-align:right; }
 .pos{ color:var(--green); } .neg{ color:var(--clay); }
 
@@ -5842,6 +5843,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   .table.fit { min-width:0; }
   .table.fit th, .table.fit td { padding:10px 7px; font-size:13px; }
   .hide-sm { display:none !important; }
+  .chat-fab { right:16px; bottom:calc(78px + env(safe-area-inset-bottom, 0px)); width:54px; height:54px; }
 }
 @media (max-width:460px){ .kpis { grid-template-columns:1fr; } }
 /* ----- Espace revendeur ----- */
@@ -5927,7 +5929,7 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .shake { animation:shake .4s; }
 @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
 .lock-delay { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
-.chat-fab { position:fixed; right:22px; bottom:22px; width:60px; height:60px; border-radius:50%; border:none; background:linear-gradient(150deg,var(--gold),var(--gold2,#9a6f1f)); color:#fff; box-shadow:0 8px 24px rgba(184,134,47,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:70; transition:transform .15s, box-shadow .15s; }
+.chat-fab { position:fixed; right:22px; bottom:calc(22px + env(safe-area-inset-bottom, 0px)); width:60px; height:60px; border-radius:50%; border:none; background:linear-gradient(150deg,var(--gold),var(--gold2,#9a6f1f)); color:#fff; box-shadow:0 8px 24px rgba(184,134,47,.45); cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:70; transition:transform .15s, box-shadow .15s; }
 .chat-fab:hover { transform:translateY(-2px) scale(1.04); box-shadow:0 12px 30px rgba(184,134,47,.55); }
 .chat-fab:active { transform:scale(.96); }
 .chat-badge { position:absolute; top:-2px; right:-2px; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--clay); color:#fff; font-size:.72rem; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid var(--paper); }
