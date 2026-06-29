@@ -4668,6 +4668,7 @@ export default function App() {
           <div className="stat"><div className="stat-ico"><TrendingUp size={15} /></div><span className="stat-lab">Dollar (USD → FCFA)</span><span className="stat-val">{nf.format(Math.round(rate))}<small> F</small></span></div>
           <div className="stat hl"><div className="stat-ico gold"><Coins size={15} /></div><span className="stat-lab">Or pur 24K</span><span className="stat-val">{fcfa(perGram24)}<small>/g</small></span></div>
         </div>
+        <p className="cours-desc">💡 <strong>Or pur 24K</strong> = la valeur mondiale d'1 g d'or pur convertie en FCFA, <strong>sans marge ni prime</strong>. C'est le repère de base : tes prix de <strong>vente</strong> (plus haut) et de <strong>rachat</strong> (plus bas) se calculent dessus, et c'est lui qui sert à <strong>valoriser ton stock</strong>.</p>
         <div className="ch-foot">
           <span className="upd"><Wifi size={13} />{updated ? `Mis à jour ${agoTxt}` : "En attente…"}{asof && <em> · marché : {asof}</em>}</span>
           <div className="ch-ctrls">
@@ -5301,6 +5302,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .cours-hero { background:linear-gradient(155deg,#241c14,#1c1611); color:#ece3d2; border-radius:16px; padding:20px; margin-bottom:18px; box-shadow:0 10px 26px rgba(28,22,17,.2); }
 .cours-hero h2 { color:#fff; font-size:23px; margin-top:8px; }
 .ch-sub { color:#a99c84; font-size:12.5px; margin:3px 0 0; max-width:520px; }
+.cours-desc { margin:12px 0 0; padding:10px 12px; background:var(--gold-soft); border:1px solid var(--line); border-radius:12px; font-size:12.5px; line-height:1.5; color:var(--ink2); }
+.cours-desc strong { color:var(--ink); }
 .live-tag { display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gold2); background:rgba(216,164,65,.12); padding:4px 10px; border-radius:20px; }
 .src-note { font-size:11px; color:var(--muted); margin:10px 0 0; }
 .src-note a { color:var(--gold); text-decoration:none; }
