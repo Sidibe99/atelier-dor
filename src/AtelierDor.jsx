@@ -2509,10 +2509,11 @@ function buildReceiptText(d, shop) {
 }
 
 function ReceiptCard({ data, shop }) {
+  const docLogo = shop.docLogo || shop.logo;
   return (
     <div className="receipt">
       <div className="rc-head">
-        {shop.logo && <img className="rc-logo" src={shop.logo} alt="" />}
+        {docLogo && <img className="rc-logo" src={docLogo} alt="" />}
         <div className="rc-shop">{shop.name}</div>
         {shop.addr && <div className="rc-sub">{shop.addr}</div>}
         {shop.phone && <div className="rc-sub">Tél : {shop.phone}</div>}
@@ -2600,7 +2601,7 @@ function receiptImageBlob(data, shop) {
       rows.forEach((r) => { r.draw(ctx, y); y += r.h; });
       try { canvas.toBlob((b) => resolve(b), "image/png"); } catch (e) { resolve(null); }
     };
-    if (shop.logo) {
+    if (shop.docLogo || shop.logo) {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -2610,7 +2611,7 @@ function receiptImageBlob(data, shop) {
         render(img, lw, lh);
       };
       img.onerror = () => render(null, 0, 0);
-      img.src = shop.logo;
+      img.src = shop.docLogo || shop.logo;
     } else {
       render(null, 0, 0);
     }
@@ -2668,7 +2669,7 @@ function ZCard({ data, shop }) {
   return (
     <div className="receipt">
       <div className="rc-head">
-        {shop.logo && <img className="rc-logo" src={shop.logo} alt="" />}
+        {(shop.docLogo || shop.logo) && <img className="rc-logo" src={shop.docLogo || shop.logo} alt="" />}
         <div className="rc-shop">{shop.name}</div>
         {shop.addr && <div className="rc-sub">{shop.addr}</div>}
       </div>
@@ -4825,8 +4826,9 @@ export default function App() {
       </div>
 
       <div className="card">
-        <div className="card-head"><h3><Receipt size={15} /> Boutique (en-tête des reçus)</h3><span className="muted">Apparaît en haut de chaque ticket</span></div>
-        <Field label="Logo de la boutique"><LogoField logo={shop.logo} onChange={(v) => setShop((s) => ({ ...s, logo: v }))} /></Field>
+        <div className="card-head"><h3><Receipt size={15} /> Logo des documents</h3><span className="muted">Reçus & bordereaux uniquement</span></div>
+        <Field label="Logo de tes documents (reçus, bordereaux)"><LogoField logo={shop.docLogo} onChange={(v) => setShop((s) => ({ ...s, docLogo: v }))} /></Field>
+        <p className="muted small" style={{ margin: "-4px 0 8px" }}>Ce logo apparaît seulement en haut de tes reçus et bordereaux. Le logo de l'application ne change pas.</p>
         <Field label="Nom de la boutique"><input className="input" value={shop.name} onChange={(e) => setShop((s) => ({ ...s, name: e.target.value }))} onBlur={() => syncShopName(shop.name)} /></Field>
         {authUser && <p className="muted small" style={{ margin: "-6px 0 4px" }}>Le nom est automatiquement mis à jour chez ton revendeur.</p>}
         <div className="manual" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
@@ -4931,7 +4933,7 @@ export default function App() {
     return (
       <div className="app"><style>{CSS}</style>
         {!authReady
-          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
+          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={null} lg /><div className="lock-sub">Chargement…</div></div></div>)
           : !authUser
             ? (<OnlineLogin onExit={exitEspace} logo={null} />)
             : (<ResellerSpace authUser={authUser} onSignOut={authSignOut} onExit={exitEspace} onPricesSaved={loadPrices} logo={null} />)}
@@ -4942,24 +4944,24 @@ export default function App() {
     return (
       <div className="app"><style>{CSS}</style>
         {!authReady
-          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div>)
+          ? (<div className="lock"><div className="lock-brand"><BrandMark logo={null} lg /><div className="lock-sub">Chargement…</div></div></div>)
           : !authUser
-            ? (<OnlineLogin onExit={exitClient} logo={shop.logo} sub="Ta boutique" heading="Connexion à ta boutique" />)
-            : (<ClientGate authUser={authUser} onSignOut={authSignOut} onExit={exitClient} resellerPhone={resellerPhone} logo={shop.logo} />)}
+            ? (<OnlineLogin onExit={exitClient} logo={null} sub="Ta boutique" heading="Connexion à ta boutique" />)
+            : (<ClientGate authUser={authUser} onSignOut={authSignOut} onExit={exitClient} resellerPhone={resellerPhone} logo={null} />)}
       </div>
     );
   }
   if (!authReady) {
-    return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={shop.logo} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
+    return (<div className="app"><style>{CSS}</style><div className="lock"><div className="lock-brand"><BrandMark logo={null} lg /><div className="lock-sub">Chargement…</div></div></div></div>);
   }
   if (!authUser) {
-    return (<div className="app"><style>{CSS}</style><OnlineLogin logo={shop.logo} sub="Ta boutique" heading="Connexion à ta boutique" /></div>);
+    return (<div className="app"><style>{CSS}</style><OnlineLogin logo={null} sub="Ta boutique" heading="Connexion à ta boutique" /></div>);
   }
   if (!onlineReady || !currentUser) {
-    return (<div className="app"><style>{CSS}</style><ClientGate authUser={authUser} onSignOut={authSignOut} resellerPhone={resellerPhone} logo={shop.logo} onAuthorized={enterOnline} /></div>);
+    return (<div className="app"><style>{CSS}</style><ClientGate authUser={authUser} onSignOut={authSignOut} resellerPhone={resellerPhone} logo={null} onAuthorized={enterOnline} /></div>);
   }
   if (pin && !pinOk) {
-    return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={shop.logo} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
+    return (<div className="app"><style>{CSS}</style><PinScreen pin={pin} email={authUser ? authUser.email : ""} shopName={shop.name} logo={null} onUnlock={() => setPinOk(true)} onLogout={logout} /></div>);
   }
   const isPatron = currentUser.role === "patron";
   const myPerms = isPatron ? null : (!permsEmpty(currentUser.perms) ? currentUser.perms : DEFAULT_VENDOR_PERMS);
@@ -5172,9 +5174,9 @@ const CSS = `
   position:fixed; inset:0 auto 0 0; z-index:40; padding:18px 14px; }
 .brand { display:flex; align-items:center; gap:11px; padding:6px 8px 20px; }
 .brand-mark { width:40px; height:40px; border-radius:10px; display:grid; place-items:center;
-  background:linear-gradient(150deg,var(--gold2),var(--gold)); color:var(--ink);
+  background:var(--ink); color:var(--gold); border:1.5px solid rgba(184,134,47,.55);
   font-family:'Fraunces',serif; font-weight:700; font-size:18px; }
-.brand-mark.has-logo { background:#fff; overflow:hidden; }
+.brand-mark.has-logo { background:#fff; overflow:hidden; border:none; }
 .brand-mark.has-logo img { width:100%; height:100%; object-fit:contain; }
 .logo-field { display:flex; align-items:center; gap:12px; }
 .logo-preview { width:54px; height:54px; border-radius:11px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; overflow:hidden; flex:none; }
