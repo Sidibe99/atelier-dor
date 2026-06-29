@@ -3427,13 +3427,13 @@ export default function App() {
   // enregistre le service worker + détecte les nouvelles versions déployées
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
-    // bundle (fichier JS) actuellement chargé, pour repérer un nouveau déploiement même si sw.js n'a pas changé
-    const curScript = document.querySelector('script[type="module"][src*="/assets/"]');
-    const baseSrc = curScript ? curScript.getAttribute("src") : null;
-    const watchWorker = (sw) => {
-      if (!sw) return;
-      sw.addEventListener("statechange", () => { if (sw.state === "installed" && navigator.serviceWorker.controller) setUpdateReady(true); });
+    let baseHtml = null;       // contenu de la page au démarrage (référence)
+    let stop = false;
+    const fetchIndex = async () => {
+      try { const r = await fetch("/?_v=" + Date.now(), { cache: "no-store" }); return r.ok ? await r.text() : null; }
+      catch (e) { return null; }
     };
+    const watchWorker = (sw) => { if (sw) sw.addEventListener("statechange", () => { if (sw.state === "installed" && navigator.serviceWorker.controller) setUpdateReady(true); }); };
     try {
       navigator.serviceWorker.register("/sw.js").then((reg) => {
         swRegRef.current = reg;
@@ -3444,19 +3444,22 @@ export default function App() {
     let reloaded = false;
     const onCtrl = () => { if (reloaded) return; reloaded = true; window.location.reload(); };
     navigator.serviceWorker.addEventListener("controllerchange", onCtrl);
-    const checkBundle = async () => {
-      if (!baseSrc) return;
-      try {
-        const res = await fetch("/index.html", { cache: "no-store" });
-        const html = await res.text();
-        if (html && html.indexOf(baseSrc) === -1) setUpdateReady(true);
-      } catch (e) { /* hors ligne */ }
+    const check = async () => {
+      if (stop) return;
+      if (swRegRef.current) swRegRef.current.update().catch(() => {});
+      const html = await fetchIndex();
+      if (!html) return;
+      if (baseHtml === null) { baseHtml = html; return; }   // première fois : on mémorise la référence
+      if (html !== baseHtml) setUpdateReady(true);
     };
-    const check = () => { if (swRegRef.current) swRegRef.current.update().catch(() => {}); checkBundle(); };
-    const iv = setInterval(check, 90000);
+    (async () => { baseHtml = await fetchIndex(); })();      // établit la référence au démarrage
+    const t0 = setTimeout(check, 8000);                      // 1ère vérif rapide
+    const iv = setInterval(check, 30000);                    // puis toutes les 30 s
     const onVis = () => { if (document.visibilityState === "visible") check(); };
     document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); navigator.serviceWorker.removeEventListener("controllerchange", onCtrl); };
+    window.addEventListener("focus", check);
+    window.addEventListener("online", check);
+    return () => { stop = true; clearTimeout(t0); clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", check); window.removeEventListener("online", check); navigator.serviceWorker.removeEventListener("controllerchange", onCtrl); };
   }, []);
   const applyUpdate = () => {
     const reg = swRegRef.current;
