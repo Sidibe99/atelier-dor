@@ -1164,6 +1164,17 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
   }, [recSec, recording]);
   const askNotif = () => { if (typeof Notification === "undefined") return; Notification.requestPermission().then((p) => setNotifPerm(p)); };
   const fmtSec = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => { if (!open) return; const iv = setInterval(() => setNowTick(Date.now()), 30000); return () => clearInterval(iv); }, [open]);
+  const relTime = (ms) => { const m = Math.floor(ms / 60000); if (m < 1) return "à l'instant"; if (m < 60) return `il y a ${m} min`; const h = Math.floor(m / 60); if (h < 24) return `il y a ${h} h`; const d = Math.floor(h / 24); return `il y a ${d} j`; };
+  const presenceOf = (pid) => {
+    const r = (reads || []).find((x) => x.userId === pid);
+    const t = r ? (r.active || 0) : 0;
+    if (!t) return null;
+    const diff = nowTick - t;
+    if (diff < 70000) return { online: true, label: "en ligne" };
+    return { online: false, label: "actif " + relTime(diff) };
+  };
   return (
     <>
       <button ref={fabRef} className="chat-fab" onPointerDown={onFabDown} onPointerMove={onFabMove} onPointerUp={onFabUp} style={fabPos ? { left: fabPos.x + "px", top: fabPos.y + "px", right: "auto", bottom: "auto" } : undefined} aria-label="Messagerie">
@@ -1174,7 +1185,11 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
         <div className="chat-panel">
           <div className="chat-head">
             <MessageCircle size={16} /> <strong>Messagerie</strong>
-            <span className="muted small">{activeChat === "all" ? "équipe" : (activePerson ? activePerson.name : "privé")}</span>
+            <span className="muted small chat-pres">
+              {activeChat === "all"
+                ? "équipe"
+                : (() => { const pr = presenceOf(activeChat); return (<>{pr && pr.online && <span className="pres-dot" />}{activePerson ? activePerson.name : "privé"}{pr ? " · " + pr.label : ""}</>); })()}
+            </span>
             {notifPerm === "default" && <button className="chat-notif" onClick={askNotif} title="Activer les notifications">🔔 Activer</button>}
             <button className="chat-x" onClick={onToggle} title="Fermer" aria-label="Fermer la messagerie"><X size={18} /></button>
           </div>
@@ -1185,7 +1200,7 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
               </button>
               {peeps.map((p) => (
                 <button key={p.id} className={`chat-tab ${activeChat === p.id ? "on" : ""}`} onClick={() => setActiveChat(p.id)} title={p.role === "patron" ? "Patron" : "Vendeur"}>
-                  {p.name}{p.role === "patron" ? " 👑" : ""}{(unreadMap && unreadMap[p.id] > 0) ? <span className="tab-dot">{unreadMap[p.id] > 9 ? "9+" : unreadMap[p.id]}</span> : null}
+                  {presenceOf(p.id) && presenceOf(p.id).online && <span className="pres-dot" />}{p.name}{p.role === "patron" ? " 👑" : ""}{(unreadMap && unreadMap[p.id] > 0) ? <span className="tab-dot">{unreadMap[p.id] > 9 ? "9+" : unreadMap[p.id]}</span> : null}
                 </button>
               ))}
             </div>
@@ -3707,8 +3722,20 @@ export default function App() {
   const markSeen = (key, ts) => {
     if (!ts) return;
     setChatSeen((prev) => { if ((prev[key] || 0) >= ts) return prev; const next = { ...prev, [key]: ts }; try { STORE.set("atelierdor:chatseenmap", JSON.stringify(next)); } catch (e) { /* */ } return next; });
-    if (currentUser) setReads((arr) => { const cur = arr.find((r) => r.id === currentUser.id); const newTs = Math.max(cur ? cur.ts || 0 : 0, ts); if (cur && (cur.ts || 0) >= newTs) return arr; const others = arr.filter((r) => r.id !== currentUser.id); return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: newTs }]; });
+    if (currentUser) setReads((arr) => { const cur = arr.find((r) => r.id === currentUser.id); const newTs = Math.max(cur ? cur.ts || 0 : 0, ts); const others = arr.filter((r) => r.id !== currentUser.id); return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: newTs, active: Date.now() }]; });
   };
+  // présence "en ligne" : pendant que la messagerie est ouverte, on rafraîchit notre activité (synchronisé via reads)
+  useEffect(() => {
+    if (!currentUser || !chatOpen) return;
+    const beat = () => setReads((arr) => {
+      const cur = arr.find((r) => r.id === currentUser.id);
+      const others = arr.filter((r) => r.id !== currentUser.id);
+      return [...others, { id: currentUser.id, userId: currentUser.id, name: me(), ts: cur ? (cur.ts || 0) : 0, active: Date.now() }];
+    });
+    beat();
+    const iv = setInterval(beat, 30000);
+    return () => clearInterval(iv);
+  }, [currentUser ? currentUser.id : null, chatOpen]);
   const paidFor = (saleId) => payments.filter((p) => p.saleId === saleId).reduce((a, b) => a + b.amount, 0);
   const balanceFor = (sale) => sale.total - paidFor(sale.id);
   const purchasePaidFor = (pid) => purchasePayments.filter((p) => p.purchaseId === pid).reduce((a, b) => a + b.amount, 0);
@@ -5971,6 +5998,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 @keyframes chatpop { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
 .chat-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--line); color:var(--ink); background:var(--gold-soft); }
 .chat-x { margin-left:auto; background:none; border:0; color:var(--muted); cursor:pointer; padding:5px; border-radius:8px; display:grid; place-items:center; flex:none; }
+.chat-pres { display:inline-flex; align-items:center; gap:5px; }
+.pres-dot { width:8px; height:8px; border-radius:50%; background:#34c759; box-shadow:0 0 0 2px rgba(52,199,89,.22); flex:none; display:inline-block; }
 .chat-x:hover { background:rgba(28,22,17,.08); color:var(--ink); }
 .chat-head strong { font-size:1rem; }
 .chat-list { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
