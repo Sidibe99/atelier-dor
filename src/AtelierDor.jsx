@@ -4825,7 +4825,7 @@ export default function App() {
         </div>
         <div className="acct-grid">
           {TREASURY_ACCOUNTS.map((acc) => (
-            <div className="card acct-card" key={acc.id}>
+            <div className={"card acct-card acct-" + acc.id} key={acc.id}>
               <div className="acct-top">
                 <span className="acct-ico">{acc.icon}</span>
                 <div><div className="acct-name">{acc.label}</div><div className="muted small">Solde initial : {fcfa(acctInit(acc.id))}</div></div>
@@ -4839,7 +4839,6 @@ export default function App() {
                 <div className="acct-acts">
                   <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "depot", account: acc.id })}>Dépôt</button>
                   <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "retrait", account: acc.id })}>Retrait</button>
-                  <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "transfert", account: acc.id })}>Transfert</button>
                   <button className="btn btn-xs btn-ghost" onClick={() => setModal({ type: "treasury", op: "init", account: acc.id })}>Solde initial</button>
                 </div>
               )}
@@ -5708,6 +5707,10 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .acct-lines { display:flex; gap:10px; }
 .acct-lines > div { flex:1; display:flex; flex-direction:column; gap:1px; background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:7px 10px; }
 .acct-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+.acct-wave { background:#e8f4fe; border-color:#b6ddf8; }
+.acct-wave .acct-ico { background:#cfe8fc; }
+.acct-om { background:#fff2e3; border-color:#ffcd9e; }
+.acct-om .acct-ico { background:#ffe0c2; }
 .btn-xs { padding:6px 10px; font-size:12px; }
 @media (max-width:760px){ .acct-grid { grid-template-columns:1fr; } }
 .enc-cell { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:9px 11px; display:flex; flex-direction:column; gap:2px; min-width:0; }
