@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import {
   LayoutGrid, ShoppingCart, ArrowDownLeft, Package, Users, BarChart3,
   Settings, Plus, X, Pencil, Trash2, Search, Coins, Scale, Gem, Wallet,
-  TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer,
+  TrendingUp, TrendingDown, AlertTriangle, Banknote, Receipt, Menu, Hammer, Landmark,
   RefreshCw, Globe, Wifi, ShieldCheck, LogOut, Delete, Download, Upload, Calculator, History, MessageCircle, Send, Check,
 } from "lucide-react";
 import {
@@ -167,6 +167,7 @@ const ACCESS_SECTIONS = [
   { id: "clients", label: "Clients" },
   { id: "credits", label: "Crédits & dettes" },
   { id: "caisse", label: "Clôture de caisse" },
+  { id: "banque", label: "Banque & comptes" },
   { id: "depenses", label: "Dépenses" },
   { id: "reports", label: "Rapports" },
   { id: "journal", label: "Historique" },
@@ -178,7 +179,7 @@ const ACCESS_SECTIONS = [
 ];
 const ALL_SECTION_IDS = ACCESS_SECTIONS.map((s) => s.id);
 // sections où le niveau « Modifier » a un sens (création / édition / suppression)
-const EDITABLE_SECTIONS = ["sales", "buy", "stock", "clients", "credits", "caisse", "depenses", "settings", "equipe"];
+const EDITABLE_SECTIONS = ["sales", "buy", "stock", "clients", "credits", "caisse", "banque", "depenses", "settings", "equipe"];
 const permLevel = (perms, id) => {
   if (!perms) return "none";
   if (Array.isArray(perms)) return perms.includes(id) ? (id === "benefices" ? "view" : "edit") : "none";
@@ -196,7 +197,7 @@ const DEFAULT_VENDOR_PERMS = mkPoste(["sales", "buy", "stock", "clients", "credi
 const POSTE_PRESETS = {
   "2ᵉ administrateur": mkPoste(ALL_SECTION_IDS, [], true),
   "Gérant": mkPoste(ALL_SECTION_IDS.filter((id) => !["settings", "abo", "equipe"].includes(id)), [], true),
-  "Comptable": mkPoste([], ["dash", "reports", "journal", "caisse", "depenses", "credits", "cours", "calc"], true),
+  "Comptable": mkPoste([], ["dash", "reports", "journal", "caisse", "banque", "depenses", "credits", "cours", "calc"], true),
   "Vendeur": mkPoste(["sales", "buy", "stock", "clients", "credits", "caisse", "depenses"], ["dash", "cours", "calc"], false),
 };
 const POSTE_ORDER = ["2ᵉ administrateur", "Gérant", "Comptable", "Vendeur", "Personnalisé"];
@@ -386,6 +387,13 @@ const seedExpenses = [
   { id: uid(), date: daysAgo(5), label: "Loyer boutique (mois)", cat: "Loyer", amount: 250000, pay: "Banque" },
   { id: uid(), date: daysAgo(6), label: "Salaire apprenti", cat: "Salaire", amount: 120000, pay: "Espèces" },
 ];
+
+const TREASURY_ACCOUNTS = [
+  { id: "banque", label: "Banque", icon: "🏦" },
+  { id: "wave", label: "Wave", icon: "🌊" },
+  { id: "om", label: "Orange Money", icon: "📱" },
+];
+const seedTreasury = [];
 
 const seedUsers = [
   mkUser("Patron", "patron", "patron123", "patron@atelier.sn"),
@@ -849,6 +857,39 @@ function ClientModal({ item, onClose, onSave }) {
       <Field label="Téléphone"><input className="input" value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="77 000 00 00" /></Field>
       <Field label="Note"><input className="input" value={f.note} onChange={(e) => set("note", e.target.value)} /></Field>
       <label className="chk-row"><input type="checkbox" checked={!!f.pro} onChange={(e) => set("pro", e.target.checked)} /><span>Fournisseur professionnel (grossiste en or)</span></label>
+    </Modal>
+  );
+}
+
+function TreasuryModal({ op, account, accounts, balances, onClose, onSave }) {
+  const accLabel = (id) => (accounts.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
+  const allIds = [...accounts.map((a) => a.id), "caisse"];
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [from, setFrom] = useState(account || accounts[0].id);
+  const [to, setTo] = useState(allIds.find((id) => id !== (account || accounts[0].id)));
+  const titles = { depot: "Dépôt", retrait: "Retrait", transfert: "Transfert", init: "Définir le solde initial" };
+  const a = Math.round(Number(amount) || 0);
+  const valid = a > 0 && (op !== "transfert" || from !== to);
+  const submit = () => {
+    if (!valid) return;
+    if (op === "transfert") onSave({ type: "transfert", account: from, to, amount: a, note });
+    else onSave({ type: op, account, amount: a, note });
+  };
+  return (
+    <Modal title={titles[op] + (op !== "transfert" ? " — " + accLabel(account) : "")} onClose={onClose}
+      footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" disabled={!valid} onClick={submit}>Valider</button></div>}>
+      {op === "transfert" && (
+        <div className="grid2">
+          <Field label="Depuis"><select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>{allIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
+          <Field label="Vers"><select className="input" value={to} onChange={(e) => setTo(e.target.value)}>{allIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
+        </div>
+      )}
+      {op === "transfert" && balances && <p className="muted small" style={{ margin: "0 0 10px" }}>Solde {accLabel(from)} : <strong>{fcfa(balances[from] || 0)}</strong></p>}
+      <Field label="Montant (F)"><input className="input num" type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" autoFocus /></Field>
+      <Field label="Note (facultatif)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={op === "depot" ? "ex : dépôt d'espèces" : op === "retrait" ? "ex : retrait au guichet" : ""} /></Field>
+      {op === "transfert" && from === to && <p className="neg small" style={{ margin: 0 }}>Choisis deux comptes différents.</p>}
+      {op === "init" && <p className="muted small" style={{ margin: 0 }}>Le solde initial remplace le point de départ du compte (les opérations s'ajoutent ensuite).</p>}
     </Modal>
   );
 }
@@ -3049,6 +3090,7 @@ export default function App() {
   const [closures, setClosures] = useState(seedClosures);
   const [payments, setPayments] = useState(seedPayments);
   const [expenses, setExpenses] = useState(seedExpenses);
+  const [treasury, setTreasury] = useState(seedTreasury);
   const [journal, setJournal] = useState([]);
   const [messages, setMessages] = useState([]);
   const [reads, setReads] = useState([]);
@@ -3193,6 +3235,8 @@ export default function App() {
           if (d.closures) setClosures(d.closures);
           if (d.payments) setPayments(d.payments);
           if (d.expenses) setExpenses(d.expenses);
+    if (d.treasury) setTreasury(d.treasury);
+          if (d.treasury) setTreasury(d.treasury);
           if (d.journal) setJournal(d.journal);
           if (d.messages) setMessages(d.messages);
           if (d.reads) setReads(d.reads);
@@ -3285,13 +3329,13 @@ export default function App() {
     setSaveState("saving");
     const t = setTimeout(async () => {
       const ok = await STORE.set("atelierdor:data", JSON.stringify({
-        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, reads, users,
+        gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, treasury, journal, messages, reads, users,
         settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
       }));
       setSaveState(ok ? "saved" : "error");
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, journal, messages, reads, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, treasury, journal, messages, reads, users, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   // ---- détection de la connexion : signale vite, et relance la synchro au retour ----
   useEffect(() => {
@@ -3376,7 +3420,7 @@ export default function App() {
     if (typeof d.resellerPhone === "string") setResellerPhone(d.resellerPhone);
   };
 
-  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, journal: setJournal, messages: setMessages, reads: setReads };
+  const SYNC_SETTERS = { gold: setGold, divers: setDivers, clients: setClients, sales: setSales, payments: setPayments, purchases: setPurchases, purchasePayments: setPurchasePayments, closures: setClosures, expenses: setExpenses, treasury: setTreasury, journal: setJournal, messages: setMessages, reads: setReads };
 
   // remplace tout le local par la version serveur (adoption d'une boutique sur un nouvel appareil)
   const hydrateFromServer = (rows) => {
@@ -3498,7 +3542,7 @@ export default function App() {
     if (!currentUser || !currentUser.shopId) return;
     if (!dataReady) return;
     const shopId = currentUser.shopId;
-    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, reads };
+    const collections = { gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, treasury, journal, messages, reads };
     const settingsDoc = { id: "main", prime, mVente, mAchat, shop, fondCaisse, resellerPhone };
     const t = setTimeout(async () => {
       if (typeof navigator !== "undefined" && navigator.onLine === false) { setSyncState("offline"); return; }
@@ -3533,7 +3577,7 @@ export default function App() {
       } catch (e) { setSyncState(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "error"); }
     }, 600);
     return () => clearTimeout(t);
-  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, journal, messages, reads, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
+  }, [loaded, currentUser, dataReady, netTick, gold, divers, clients, sales, payments, purchases, purchasePayments, closures, expenses, treasury, journal, messages, reads, prime, mVente, mAchat, shop, fondCaisse, resellerPhone]);
 
   const resetData = () => ask({ title: "Tout réinitialiser ?", message: "Toutes les données seront effacées et remplacées par les exemples. Cette action est définitive.", danger: true, okLabel: "Réinitialiser", onOk: async () => {
     await STORE.del("atelierdor:data");
@@ -3787,6 +3831,25 @@ export default function App() {
   const saveDivers = (it) => { setDivers((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), added: TODAY, ...it }, ...arr]); log("stock", it.id ? "Article divers modifié" : "Article divers ajouté", `${it.name}${it.qty != null ? " · qté " + it.qty : ""}`); setModal(null); };
   const saveClient = (it) => { setClients((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), ...it }, ...arr]); log("client", it.id ? "Client modifié" : "Client ajouté", it.name || ""); setModal(null); };
   const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); log("depense", it.id ? "Dépense modifiée" : "Dépense ajoutée", `${it.label || ""} · ${fcfa(it.amount || 0)}`); setModal(null); };
+
+  // ---- Trésorerie (Banque / Wave / Orange Money) ----
+  const acctInit = (acc) => { const xs = treasury.filter((t) => t.type === "init" && t.account === acc).sort((a, b) => a.ts - b.ts); return xs.length ? xs[xs.length - 1].amount : 0; };
+  const acctIn = (acc) => treasury.filter((t) => (t.type === "depot" && t.account === acc) || (t.type === "transfert" && t.to === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctOut = (acc) => treasury.filter((t) => (t.type === "retrait" && t.account === acc) || (t.type === "transfert" && t.account === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctBal = (acc) => acctInit(acc) + acctIn(acc) - acctOut(acc);
+  const treasuryBalances = { banque: acctBal("banque"), wave: acctBal("wave"), om: acctBal("om"), caisse: acctBal("caisse") };
+  const accLabelT = (id) => (TREASURY_ACCOUNTS.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
+  const saveTreasury = (mv) => {
+    const entry = { id: uid(), ts: Date.now(), date: TODAY, by: me(), ...mv };
+    setTreasury((arr) => mv.type === "init" ? [...arr.filter((t) => !(t.type === "init" && t.account === mv.account)), entry] : [...arr, entry]);
+    const d = mv.type === "init" ? `Solde initial ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
+      : mv.type === "depot" ? `Dépôt ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
+      : mv.type === "retrait" ? `Retrait ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
+      : `Transfert ${accLabelT(mv.account)} → ${accLabelT(mv.to)} : ${fcfa(mv.amount)}`;
+    log("caisse", "Trésorerie", d);
+    setModal(null);
+  };
+  const delTreasury = (id) => ask({ title: "Supprimer cette opération ?", message: "Le solde du compte sera recalculé.", danger: true, okLabel: "Supprimer", onOk: () => { setTreasury((arr) => arr.filter((t) => t.id !== id)); log("caisse", "Trésorerie", "Opération supprimée"); } });
   const paySalary = ({ name, amount, pay, month }) => {
     setExpenses((arr) => [{ id: uid(), date: TODAY, by: me(), label: `Salaire — ${name}${month ? " · " + month : ""}`, cat: "Salaire", pay, amount, note: "" }, ...arr]);
     log("depense", "Salaire versé", `${name} · ${fcfa(amount)}`);
@@ -3868,7 +3931,7 @@ export default function App() {
 
   const buildBackupJson = () => JSON.stringify({
     _app: "AtelierDor", _exportedAt: new Date().toISOString(),
-    gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, users,
+    gold, divers, clients, sales, purchases, purchasePayments, closures, payments, expenses, treasury, users,
     settings: { prime, mVente, mAchat, shop, fondCaisse, resellerPhone },
   }, null, 2);
 
@@ -3904,6 +3967,7 @@ export default function App() {
     { id: "clients", label: "Clients", icon: Users },
     { id: "credits", label: "Crédits & dettes", icon: Receipt },
     { id: "caisse", label: "Clôture de caisse", icon: Banknote },
+    { id: "banque", label: "Banque & comptes", icon: Landmark },
     { id: "depenses", label: "Dépenses", icon: TrendingDown },
     { id: "reports", label: "Rapports", icon: BarChart3 },
     { id: "journal", label: "Historique", icon: History },
@@ -4610,14 +4674,16 @@ export default function App() {
     const caTotal = Math.round(todaySales.reduce((a, b) => a + b.total, 0));
     const rachats = Math.round(purchasePayments.filter((p) => p.date === TODAY && p.pay === "Espèces").reduce((a, b) => a + b.amount, 0));
     const depenses = Math.round(expenses.filter((e) => e.date === TODAY && e.pay === "Espèces").reduce((a, b) => a + b.amount, 0));
-    const theorique = fondCaisse + esp - rachats - depenses;
+    const transfIn = Math.round(treasury.filter((t) => t.type === "transfert" && t.to === "caisse" && t.date === TODAY).reduce((a, b) => a + b.amount, 0));
+    const transfOut = Math.round(treasury.filter((t) => t.type === "transfert" && t.account === "caisse" && t.date === TODAY).reduce((a, b) => a + b.amount, 0));
+    const theorique = fondCaisse + esp - rachats - depenses + transfIn - transfOut;
     const compte = parseFloat(compteCaisse) || 0;
     const compted = compteCaisse !== "";
     const ecart = compte - theorique;
     const closedToday = closures.find((c) => c.date === TODAY);
 
     const cloturer = () => {
-      const c = { id: uid(), date: TODAY, time: nowTime(), by: me(), fond: fondCaisse, esp, wave, om, vir, caTotal: encTotal, rachats, depenses, theorique, compte, ecart };
+      const c = { id: uid(), date: TODAY, time: nowTime(), by: me(), fond: fondCaisse, esp, wave, om, vir, caTotal: encTotal, rachats, depenses, transfIn, transfOut, theorique, compte, ecart };
       setClosures((arr) => [c, ...arr]);
       log("caisse", "Clôture de caisse", `Théorique ${fcfa(theorique)} · Compté ${fcfa(compte)} · Écart ${fcfa(ecart)}`);
       setCompteCaisse("");
@@ -4668,6 +4734,8 @@ export default function App() {
               <div className="recon-row"><span>+ Encaissements espèces</span><span className="num">{fcfa(esp)}</span></div>
               <div className="recon-row"><span>− Rachats payés</span><span className="num neg">{fcfa(rachats)}</span></div>
               <div className="recon-row"><span>− Dépenses</span><span className="num">{fcfa(depenses)}</span></div>
+              {transfIn > 0 && <div className="recon-row"><span>+ Transferts reçus en caisse</span><span className="num pos">{fcfa(transfIn)}</span></div>}
+              {transfOut > 0 && <div className="recon-row"><span>− Transferts vers banque / Wave / OM</span><span className="num neg">{fcfa(transfOut)}</span></div>}
               <div className="recon-row total"><span>= Espèces théoriques</span><span className="num">{fcfa(theorique)}</span></div>
               <div className="recon-row"><span>Espèces comptées</span>
                 <input className="input num input-sm" type="number" value={compteCaisse} onChange={(e) => setCompteCaisse(e.target.value)} placeholder="0" /></div>
@@ -4741,6 +4809,61 @@ export default function App() {
             </div>
           );
         })()}
+      </>
+    );
+  };
+
+  const renderBanque = () => {
+    const canEditB = canEdit("banque");
+    const hist = treasury.filter((t) => t.type !== "init").sort((a, b) => b.ts - a.ts);
+    const totalSolde = TREASURY_ACCOUNTS.reduce((s, acc) => s + acctBal(acc.id), 0);
+    return (
+      <>
+        <div className="card-head" style={{ marginBottom: 14 }}>
+          <h3>Soldes des comptes — total {fcfa(totalSolde)}</h3>
+          {canEditB && <button className="btn btn-gold" onClick={() => setModal({ type: "treasury", op: "transfert", account: "banque" })}><ArrowDownLeft size={15} /> Nouveau transfert</button>}
+        </div>
+        <div className="acct-grid">
+          {TREASURY_ACCOUNTS.map((acc) => (
+            <div className="card acct-card" key={acc.id}>
+              <div className="acct-top">
+                <span className="acct-ico">{acc.icon}</span>
+                <div><div className="acct-name">{acc.label}</div><div className="muted small">Solde initial : {fcfa(acctInit(acc.id))}</div></div>
+              </div>
+              <div className="acct-bal num">{fcfa(acctBal(acc.id))}</div>
+              <div className="acct-lines">
+                <div><span className="muted small">Entrées</span><span className="num pos">{fcfa(acctIn(acc.id))}</span></div>
+                <div><span className="muted small">Sorties</span><span className="num neg">{fcfa(acctOut(acc.id))}</span></div>
+              </div>
+              {canEditB && (
+                <div className="acct-acts">
+                  <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "depot", account: acc.id })}>Dépôt</button>
+                  <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "retrait", account: acc.id })}>Retrait</button>
+                  <button className="btn btn-xs btn-line" onClick={() => setModal({ type: "treasury", op: "transfert", account: acc.id })}>Transfert</button>
+                  <button className="btn btn-xs btn-ghost" onClick={() => setModal({ type: "treasury", op: "init", account: acc.id })}>Solde initial</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="card">
+          <div className="card-head"><h3>Historique des opérations</h3></div>
+          <table className="table">
+            <thead><tr><th>Date</th><th>Opération</th><th className="hide-sm">Compte</th><th className="r">Montant</th><th className="hide-sm">Note</th>{canEditB && <th></th>}</tr></thead>
+            <tbody>
+              {hist.length === 0 ? <tr><td colSpan={canEditB ? 6 : 5} className="muted small">Aucune opération enregistrée.</td></tr> : hist.map((t) => (
+                <tr key={t.id}>
+                  <td className="muted small">{t.date}</td>
+                  <td>{t.type === "depot" ? "Dépôt" : t.type === "retrait" ? "Retrait" : "Transfert"}{t.type === "transfert" && <span className="muted small"> ({accLabelT(t.account)} → {accLabelT(t.to)})</span>}</td>
+                  <td className="hide-sm">{accLabelT(t.account)}</td>
+                  <td className={`r num ${t.type === "depot" ? "pos" : t.type === "retrait" ? "neg" : ""}`}>{fcfa(t.amount)}</td>
+                  <td className="hide-sm muted small">{t.note || "—"}</td>
+                  {canEditB && <td className="r"><button className="icon-btn" onClick={() => delTreasury(t.id)}><Trash2 size={15} /></button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </>
     );
   };
@@ -5173,7 +5296,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} canSell={canEdit("sales")} canBuy={canEdit("buy")} onUse={(type, data) => { if (type === "sale") { if (!canEdit("sales")) return; setView("sales"); setModal({ type: "sale", init: data }); } else { if (!canEdit("buy")) return; setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, banque: renderBanque, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} canSell={canEdit("sales")} canBuy={canEdit("buy")} onUse={(type, data) => { if (type === "sale") { if (!canEdit("sales")) return; setView("sales"); setModal({ type: "sale", init: data }); } else { if (!canEdit("buy")) return; setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -5307,6 +5430,7 @@ export default function App() {
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
+      {modal?.type === "treasury" && <TreasuryModal op={modal.op} account={modal.account} accounts={TREASURY_ACCOUNTS} balances={treasuryBalances} onClose={() => setModal(null)} onSave={saveTreasury} />}
       {modal?.type === "salary" && <SalaryModal names={teamMembers.map((m) => m.name).filter(Boolean)} onClose={() => setModal(null)} onSave={paySalary} />}
       {modal?.type === "pin" && <PinSetModal hasPin={!!pin} onClose={() => setModal(null)} onSave={(cfg) => { savePin(cfg); setModal(null); notify("Code PIN enregistré. Il sera demandé à la prochaine ouverture.", "Sécurité"); }} onRemove={() => { savePin(null); setPinOk(true); setModal(null); notify("Code PIN retiré.", "Sécurité"); }} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
@@ -5575,6 +5699,17 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .tl-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
 @media (max-width:560px){ .hist-grid { grid-template-columns:repeat(2,1fr); } }
 .enc-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+.acct-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:18px; }
+.acct-card { display:flex; flex-direction:column; gap:10px; padding:16px; }
+.acct-top { display:flex; align-items:center; gap:11px; }
+.acct-ico { font-size:24px; width:42px; height:42px; display:grid; place-items:center; background:var(--gold-soft); border-radius:11px; flex:none; }
+.acct-name { font-weight:700; font-size:15px; color:var(--ink); }
+.acct-bal { font-size:24px; font-weight:800; color:var(--ink); letter-spacing:-.01em; }
+.acct-lines { display:flex; gap:10px; }
+.acct-lines > div { flex:1; display:flex; flex-direction:column; gap:1px; background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:7px 10px; }
+.acct-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+.btn-xs { padding:6px 10px; font-size:12px; }
+@media (max-width:760px){ .acct-grid { grid-template-columns:1fr; } }
 .enc-cell { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:9px 11px; display:flex; flex-direction:column; gap:2px; min-width:0; }
 .enc-lab { font-size:11.5px; color:var(--muted); line-height:1.25; }
 .enc-val { font-size:15px; font-weight:600; color:var(--text); }
