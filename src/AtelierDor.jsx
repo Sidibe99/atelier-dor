@@ -19,6 +19,7 @@ const nbsp = (s) => String(s).replace(/\s/g, "\u00a0");
 const fcfa = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0F`;
 const fcfaLong = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0FCFA`;
 const g = (n) => `${nbsp(nf.format(Math.round((n || 0) * 100) / 100))}\u00a0g`;
+const SEARCH_PH = { sales: "Rechercher une vente…", journal: "Rechercher dans le journal…", stock: "Rechercher un article…", clients: "Rechercher un client…" };
 const dec = (n, d = 2) => (n || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const uid = () => Math.random().toString(36).slice(2, 9);
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -3912,6 +3913,7 @@ export default function App() {
     { id: "abo", label: "Abonnement", icon: Wallet },
   ];
   const go = (id) => { setView(id); setNavOpen(false); };
+  useEffect(() => { setQ(""); }, [view]);
 
   // --- Bouton/flèche RETOUR : navigue dans l'app au lieu de quitter ---
   const navStackRef = useRef(["dash"]);
@@ -4393,8 +4395,10 @@ export default function App() {
   };
 
   const renderStock = () => {
-    const orItems = gold.filter((it) => goldCat(it) === "or");
-    const bijouxItems = gold.filter((it) => goldCat(it) === "bijou");
+    const ql = q.trim().toLowerCase();
+    const matchG = (it) => !ql || (`${it.type || ""} ${it.desc || it.description || ""} ${it.karat || ""}`).toLowerCase().includes(ql);
+    const orItems = gold.filter((it) => goldCat(it) === "or" && matchG(it));
+    const bijouxItems = gold.filter((it) => goldCat(it) === "bijou" && matchG(it));
     const goldTable = (list, title) => {
       const wt = list.reduce((a, it) => a + it.weight * it.qty, 0);
       const val = list.reduce((a, it) => a + it.weight * it.qty * prices[it.karat].vente, 0);
@@ -4496,6 +4500,7 @@ export default function App() {
       </div>
       <div className="client-grid">
         {clients.filter((c) => {
+          if (q.trim() && !(`${c.name || ""} ${c.phone || ""} ${c.note || ""}`).toLowerCase().includes(q.trim().toLowerCase())) return false;
           if (clientFilter === "clients") return sales.some((s) => s.client === c.name);
           if (clientFilter === "fourn") return c.pro || purchases.some((p) => p.client === c.name);
           return true;
@@ -5285,8 +5290,8 @@ export default function App() {
           </div>
 
           <div className="top-actions">
-            {(view === "sales" || view === "dash") && (
-              <div className="search"><Search size={15} /><input placeholder="Rechercher…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+            {SEARCH_PH[view] && (
+              <div className="search"><Search size={15} /><input placeholder={SEARCH_PH[view]} value={q} onChange={(e) => setQ(e.target.value)} /></div>
             )}
             {canEdit("buy") && <button className="btn btn-clay" onClick={() => setModal({ type: "purchase" })}><ArrowDownLeft size={16} /> Achat</button>}
             {canEdit("sales") && <button className="btn btn-gold" onClick={() => setModal({ type: "sale" })}><Plus size={16} /> Vente</button>}
