@@ -1176,6 +1176,7 @@ function ChatWidget({ messages, reads, people, myId, isPatron, open, onToggle, o
             <MessageCircle size={16} /> <strong>Messagerie</strong>
             <span className="muted small">{activeChat === "all" ? "équipe" : (activePerson ? activePerson.name : "privé")}</span>
             {notifPerm === "default" && <button className="chat-notif" onClick={askNotif} title="Activer les notifications">🔔 Activer</button>}
+            <button className="chat-x" onClick={onToggle} title="Fermer" aria-label="Fermer la messagerie"><X size={18} /></button>
           </div>
           {peeps.length > 0 && (
             <div className="chat-tabs">
@@ -3306,7 +3307,7 @@ export default function App() {
     let alive = true;
     (async () => {
       try {
-        const { data, error } = await supabase.from("profiles").select("name, role").eq("shop_id", sid);
+        const { data, error } = await supabase.from("profiles").select("id, name, role").eq("shop_id", sid);
         if (!error && alive) setTeamMembers(data || []);
       } catch (e) { /* hors ligne : on garde la liste vide */ }
     })();
@@ -5376,7 +5377,7 @@ export default function App() {
           </div>
         </div>
       )}
-      <ChatWidget messages={messages} reads={reads} people={users.filter((u) => u.id !== currentUser.id)} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} unreadMap={chatUnreadMap} onSeen={markSeen} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
+      <ChatWidget messages={messages} reads={reads} people={(teamMembers && teamMembers.length ? teamMembers : users).filter((u) => u.id && u.id !== currentUser.id)} myId={currentUser.id} isPatron={isPatron} open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onSend={sendMessage} onDelete={deleteMessage} unread={chatUnread} unreadMap={chatUnreadMap} onSeen={markSeen} onNotice={notify} limits={mediaLimit(license ? license.plan : "S")} shopId={currentUser.shopId} onUpsell={chatUpsell} />
     </div>
   );
 }
@@ -5969,6 +5970,8 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .chat-panel { position:fixed; right:22px; bottom:94px; width:360px; max-width:calc(100vw - 32px); height:520px; max-height:calc(100vh - 130px); background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 50px rgba(28,22,17,.28); display:flex; flex-direction:column; overflow:hidden; z-index:70; animation:chatpop .18s ease-out; }
 @keyframes chatpop { from{opacity:0; transform:translateY(12px) scale(.98)} to{opacity:1; transform:translateY(0) scale(1)} }
 .chat-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--line); color:var(--ink); background:var(--gold-soft); }
+.chat-x { margin-left:auto; background:none; border:0; color:var(--muted); cursor:pointer; padding:5px; border-radius:8px; display:grid; place-items:center; flex:none; }
+.chat-x:hover { background:rgba(28,22,17,.08); color:var(--ink); }
 .chat-head strong { font-size:1rem; }
 .chat-list { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .chat-empty { text-align:center; margin:auto; line-height:1.6; }
