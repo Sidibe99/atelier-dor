@@ -5707,10 +5707,8 @@ nav { display:flex; flex-direction:column; gap:3px; flex:1; }
 .acct-lines { display:flex; gap:10px; }
 .acct-lines > div { flex:1; display:flex; flex-direction:column; gap:1px; background:var(--paper); border:1px solid var(--line); border-radius:9px; padding:7px 10px; }
 .acct-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
-.acct-wave { background:#e8f4fe; border-color:#b6ddf8; }
-.acct-wave .acct-ico { background:#cfe8fc; }
-.acct-om { background:#fff2e3; border-color:#ffcd9e; }
-.acct-om .acct-ico { background:#ffe0c2; }
+.acct-wave .acct-ico { background:#9fd0f5; }
+.acct-om .acct-ico { background:#ffac61; }
 .btn-xs { padding:6px 10px; font-size:12px; }
 @media (max-width:760px){ .acct-grid { grid-template-columns:1fr; } }
 .enc-cell { background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:9px 11px; display:flex; flex-direction:column; gap:2px; min-width:0; }
