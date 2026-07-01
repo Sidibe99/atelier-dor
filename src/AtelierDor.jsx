@@ -861,34 +861,60 @@ function ClientModal({ item, onClose, onSave }) {
   );
 }
 
-function TreasuryModal({ op, account, accounts, balances, onClose, onSave }) {
-  const accLabel = (id) => (accounts.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
-  const allIds = [...accounts.map((a) => a.id), "caisse"];
+function TreasuryModal({ op, account, accounts, balances, clientNames, onClose, onSave }) {
+  const accLabel = (id) => id === "externe" ? "Client / Fournisseur (externe)" : (accounts.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
+  const internalIds = [...accounts.map((a) => a.id), "caisse"];
+  const destIds = [...internalIds, "externe"];
   const [amount, setAmount] = useState("");
+  const [fee, setFee] = useState("");
   const [note, setNote] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [accountNo, setAccountNo] = useState("");
+  const [beneficiary, setBeneficiary] = useState("");
   const [from, setFrom] = useState(account || accounts[0].id);
-  const [to, setTo] = useState(allIds.find((id) => id !== (account || accounts[0].id)));
+  const [to, setTo] = useState(destIds.find((id) => id !== (account || accounts[0].id)));
   const titles = { depot: "Dépôt", retrait: "Retrait", transfert: "Transfert", init: "Définir le solde initial" };
   const a = Math.round(Number(amount) || 0);
-  const valid = a > 0 && (op !== "transfert" || from !== to);
+  const f = Math.round(Number(fee) || 0);
+  const isExt = op === "transfert" && to === "externe";
+  const valid = a > 0 && (op !== "transfert" || (from !== to && (!isExt || beneficiary.trim())));
   const submit = () => {
     if (!valid) return;
-    if (op === "transfert") onSave({ type: "transfert", account: from, to, amount: a, note });
-    else onSave({ type: op, account, amount: a, note });
+    const extra = {};
+    if (f > 0) extra.fee = f;
+    if (bankName.trim()) extra.bankName = bankName.trim();
+    if (accountNo.trim()) extra.accountNo = accountNo.trim();
+    if (op === "transfert") onSave({ type: "transfert", account: from, to, amount: a, note, ...(isExt ? { beneficiary: beneficiary.trim() } : {}), ...extra });
+    else onSave({ type: op, account, amount: a, note, ...extra });
   };
   return (
     <Modal title={titles[op] + (op !== "transfert" ? " — " + accLabel(account) : "")} onClose={onClose}
       footer={<div className="foot-actions"><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-gold" disabled={!valid} onClick={submit}>Valider</button></div>}>
       {op === "transfert" && (
         <div className="grid2">
-          <Field label="Depuis"><select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>{allIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
-          <Field label="Vers"><select className="input" value={to} onChange={(e) => setTo(e.target.value)}>{allIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
+          <Field label="Depuis"><select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>{internalIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
+          <Field label="Vers"><select className="input" value={to} onChange={(e) => setTo(e.target.value)}>{destIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
         </div>
+      )}
+      {isExt && (
+        <Field label="Bénéficiaire (client / fournisseur)">
+          <input className="input" list="ad-treasury-clients" value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} placeholder="Nom du client ou fournisseur" />
+          {clientNames && clientNames.length > 0 && <datalist id="ad-treasury-clients">{clientNames.map((n) => <option key={n} value={n} />)}</datalist>}
+        </Field>
       )}
       {op === "transfert" && balances && from !== "caisse" && <p className="muted small" style={{ margin: "0 0 10px" }}>Solde {accLabel(from)} : <strong>{fcfa(balances[from] || 0)}</strong></p>}
       <Field label="Montant (F)"><input className="input num" type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" autoFocus /></Field>
+      {op !== "init" && <Field label="Frais (facultatif)"><input className="input num" type="number" inputMode="numeric" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" /></Field>}
+      {(op === "depot" || op === "retrait") && (
+        <div className="grid2">
+          <Field label="Établissement / banque (facultatif)"><input className="input" value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="ex : CBAO, Ecobank…" /></Field>
+          <Field label="N° de compte / réf. (facultatif)"><input className="input" value={accountNo} onChange={(e) => setAccountNo(e.target.value)} placeholder="ex : SN012 3456…" /></Field>
+        </div>
+      )}
       <Field label="Note (facultatif)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={op === "depot" ? "ex : dépôt d'espèces" : op === "retrait" ? "ex : retrait au guichet" : ""} /></Field>
+      {op !== "init" && f > 0 && <p className="muted small" style={{ margin: 0 }}>Total débité du compte : <strong>{fcfa((op === "depot" ? 0 : a) + f)}</strong>{op === "depot" ? " (frais)" : ""}{op === "depot" && a > 0 ? ` · crédité ${fcfa(a)}` : ""}</p>}
       {op === "transfert" && from === to && <p className="neg small" style={{ margin: 0 }}>Choisis deux comptes différents.</p>}
+      {isExt && !beneficiary.trim() && <p className="neg small" style={{ margin: 0 }}>Indique le nom du bénéficiaire.</p>}
       {op === "init" && <p className="muted small" style={{ margin: 0 }}>Le solde initial remplace le point de départ du compte (les opérations s'ajoutent ensuite).</p>}
     </Modal>
   );
@@ -3837,24 +3863,25 @@ export default function App() {
   const acctInit = (acc) => { const xs = treasury.filter((t) => t.type === "init" && t.account === acc).sort((a, b) => a.ts - b.ts); return xs.length ? xs[xs.length - 1].amount : 0; };
   const acctPayIn = (acc) => payments.filter((p) => methodAcct(p.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0);
   const acctPayOut = (acc) => purchasePayments.filter((p) => methodAcct(p.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0) + expenses.filter((e) => methodAcct(e.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0);
-  const acctManIn = (acc) => treasury.filter((t) => (t.type === "depot" && t.account === acc) || (t.type === "transfert" && t.to === acc)).reduce((s, t) => s + t.amount, 0);
-  const acctManOut = (acc) => treasury.filter((t) => (t.type === "retrait" && t.account === acc) || (t.type === "transfert" && t.account === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctManIn = (acc) => treasury.reduce((s, t) => s + (((t.type === "depot" && t.account === acc) || (t.type === "transfert" && t.to === acc)) ? t.amount : 0), 0);
+  const acctManOut = (acc) => treasury.reduce((s, t) => { let v = 0; if ((t.type === "retrait" || t.type === "transfert") && t.account === acc) v += t.amount; if (t.account === acc) v += (t.fee || 0); return s + v; }, 0);
   const acctIn = (acc) => acctPayIn(acc) + acctManIn(acc);
   const acctOut = (acc) => acctPayOut(acc) + acctManOut(acc);
   const acctBal = (acc) => acctInit(acc) + acctIn(acc) - acctOut(acc);
   const treasuryBalances = { banque: acctBal("banque"), wave: acctBal("wave"), om: acctBal("om"), caisse: acctBal("caisse") };
-  const accLabelT = (id) => (TREASURY_ACCOUNTS.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
+  const accLabelT = (id, bene) => id === "externe" ? (bene || "Client / Fournisseur") : (TREASURY_ACCOUNTS.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
   const saveTreasury = (mv) => {
     const entry = { id: uid(), ts: Date.now(), date: TODAY, by: me(), ...mv };
     setTreasury((arr) => mv.type === "init" ? [...arr.filter((t) => !(t.type === "init" && t.account === mv.account)), entry] : [...arr, entry]);
+    const feeTxt = mv.fee ? ` (frais ${fcfa(mv.fee)})` : "";
     const d = mv.type === "init" ? `Solde initial ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
-      : mv.type === "depot" ? `Dépôt ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
-      : mv.type === "retrait" ? `Retrait ${accLabelT(mv.account)} : ${fcfa(mv.amount)}`
-      : `Transfert ${accLabelT(mv.account)} → ${accLabelT(mv.to)} : ${fcfa(mv.amount)}`;
+      : mv.type === "depot" ? `Dépôt ${accLabelT(mv.account)} : ${fcfa(mv.amount)}${feeTxt}`
+      : mv.type === "retrait" ? `Retrait ${accLabelT(mv.account)} : ${fcfa(mv.amount)}${feeTxt}`
+      : `Transfert ${accLabelT(mv.account)} → ${accLabelT(mv.to, mv.beneficiary)} : ${fcfa(mv.amount)}${feeTxt}`;
     log("caisse", "Trésorerie", d);
     setModal(null);
   };
-  const delTreasury = (id) => ask({ title: "Supprimer cette opération ?", message: "Le solde du compte sera recalculé.", danger: true, okLabel: "Supprimer", onOk: () => { setTreasury((arr) => arr.filter((t) => t.id !== id)); log("caisse", "Trésorerie", "Opération supprimée"); } });
+  const delTreasury = (id) => ask({ title: "Annuler cette opération ?", message: "L'opération sera retirée et le solde du compte recalculé.", danger: true, okLabel: "Annuler l'opération", onOk: () => { setTreasury((arr) => arr.filter((t) => t.id !== id)); log("caisse", "Trésorerie", "Opération annulée"); } });
   const paySalary = ({ name, amount, pay, month }) => {
     setExpenses((arr) => [{ id: uid(), date: TODAY, by: me(), label: `Salaire — ${name}${month ? " · " + month : ""}`, cat: "Salaire", pay, amount, note: "" }, ...arr]);
     log("depense", "Salaire versé", `${name} · ${fcfa(amount)}`);
@@ -4848,7 +4875,13 @@ export default function App() {
 
   const renderBanque = () => {
     const canEditB = canEdit("banque");
-    const hist = treasury.filter((t) => t.type !== "init").sort((a, b) => b.ts - a.ts);
+    const tkey = (x) => x.ts || (x.date ? new Date(x.date + "T" + (x.time || "00:00") + ":00").getTime() : 0);
+    const activity = [];
+    treasury.filter((t) => t.type !== "init").forEach((t) => activity.push({ ...t, _src: "man", _key: tkey(t) }));
+    payments.forEach((p) => { const acc = methodAcct(p.pay); if (acc && acc !== "caisse") activity.push({ _src: "auto", _key: tkey(p), id: "S" + p.id, date: p.date, dir: "in", account: acc, amount: p.amount, label: "Encaissement vente" }); });
+    purchasePayments.forEach((p) => { const acc = methodAcct(p.pay); if (acc && acc !== "caisse") activity.push({ _src: "auto", _key: tkey(p), id: "A" + p.id, date: p.date, dir: "out", account: acc, amount: p.amount, label: "Paiement rachat (fournisseur)" }); });
+    expenses.forEach((e) => { const acc = methodAcct(e.pay); if (acc && acc !== "caisse") activity.push({ _src: "auto", _key: tkey(e), id: "E" + e.id, date: e.date, dir: "out", account: acc, amount: e.amount, label: "Dépense" + (e.label ? " — " + e.label : "") }); });
+    const hist = activity.sort((a, b) => b._key - a._key).slice(0, 250);
     const totalSolde = TREASURY_ACCOUNTS.reduce((s, acc) => s + acctBal(acc.id), 0);
     return (
       <>
@@ -4880,19 +4913,26 @@ export default function App() {
           ))}
         </div>
         <div className="card">
-          <div className="card-head"><h3>Historique des opérations</h3></div>
+          <div className="card-head"><h3>Historique des opérations</h3><span className="muted small">ventes, rachats et dépenses (hors espèces) inclus automatiquement</span></div>
           <table className="table">
-            <thead><tr><th>Date</th><th>Opération</th><th className="r">Montant</th><th className="hide-sm">Note</th>{canEditB && <th></th>}</tr></thead>
+            <thead><tr><th>Date</th><th>Opération</th><th className="r">Montant</th><th className="hide-sm">Détails</th>{canEditB && <th></th>}</tr></thead>
             <tbody>
-              {hist.length === 0 ? <tr><td colSpan={canEditB ? 5 : 4} className="muted small">Aucune opération enregistrée.</td></tr> : hist.map((t) => (
+              {hist.length === 0 ? <tr><td colSpan={canEditB ? 5 : 4} className="muted small">Aucune opération enregistrée.</td></tr> : hist.map((t) => {
+                const isIn = t._src === "man" ? t.type === "depot" : t.dir === "in";
+                const isOut = t._src === "man" ? t.type === "retrait" : t.dir === "out";
+                const det = t._src === "man" ? [t.note, t.bankName, t.accountNo && ("N° " + t.accountNo), t.fee ? ("frais " + fcfa(t.fee)) : ""].filter(Boolean).join(" · ") : "";
+                return (
                 <tr key={t.id}>
                   <td className="muted small">{t.date}</td>
-                  <td>{t.type === "depot" ? "Dépôt " + accLabelT(t.account) : t.type === "retrait" ? "Retrait " + accLabelT(t.account) : <>Transfert <span className="muted small">{accLabelT(t.account)} → {accLabelT(t.to)}</span></>}</td>
-                  <td className={`r num ${t.type === "depot" ? "pos" : t.type === "retrait" ? "neg" : ""}`}>{fcfa(t.amount)}</td>
-                  <td className="hide-sm muted small">{t.note || "—"}</td>
-                  {canEditB && <td className="r"><button className="icon-btn" onClick={() => delTreasury(t.id)}><Trash2 size={15} /></button></td>}
+                  <td>{t._src === "man"
+                    ? (t.type === "depot" ? "Dépôt " + accLabelT(t.account) : t.type === "retrait" ? "Retrait " + accLabelT(t.account) : <>Transfert <span className="muted small">{accLabelT(t.account)} → {accLabelT(t.to, t.beneficiary)}</span></>)
+                    : <>{t.label} <span className="muted small">· {accLabelT(t.account)}</span></>}</td>
+                  <td className={`r num ${isIn ? "pos" : isOut ? "neg" : ""}`}>{isOut ? "−" : ""}{fcfa(t.amount)}</td>
+                  <td className="hide-sm muted small">{t._src === "man" ? (det || "—") : <span className="pill pill-ink" style={{ fontSize: 10 }}>auto</span>}</td>
+                  {canEditB && <td className="r">{t._src === "man" ? <button className="btn btn-xs btn-line" onClick={() => delTreasury(t.id)}>Annuler</button> : null}</td>}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -5462,7 +5502,7 @@ export default function App() {
       {modal?.type === "divers" && <DiversModal item={modal.data} onClose={() => setModal(null)} onSave={saveDivers} />}
       {modal?.type === "client" && <ClientModal item={modal.data} onClose={() => setModal(null)} onSave={saveClient} />}
       {modal?.type === "expense" && <ExpenseModal item={modal.data} onClose={() => setModal(null)} onSave={saveExpense} />}
-      {modal?.type === "treasury" && <TreasuryModal op={modal.op} account={modal.account} accounts={TREASURY_ACCOUNTS} balances={treasuryBalances} onClose={() => setModal(null)} onSave={saveTreasury} />}
+      {modal?.type === "treasury" && <TreasuryModal op={modal.op} account={modal.account} accounts={TREASURY_ACCOUNTS} balances={treasuryBalances} clientNames={clients.map((c) => c.name).filter(Boolean)} onClose={() => setModal(null)} onSave={saveTreasury} />}
       {modal?.type === "salary" && <SalaryModal names={teamMembers.map((m) => m.name).filter(Boolean)} onClose={() => setModal(null)} onSave={paySalary} />}
       {modal?.type === "pin" && <PinSetModal hasPin={!!pin} onClose={() => setModal(null)} onSave={(cfg) => { savePin(cfg); setModal(null); notify("Code PIN enregistré. Il sera demandé à la prochaine ouverture.", "Sécurité"); }} onRemove={() => { savePin(null); setPinOk(true); setModal(null); notify("Code PIN retiré.", "Sécurité"); }} />}
       {modal?.type === "user" && <UserModal item={modal.data} onClose={() => setModal(null)} onSave={saveUser} />}
