@@ -885,7 +885,7 @@ function TreasuryModal({ op, account, accounts, balances, onClose, onSave }) {
           <Field label="Vers"><select className="input" value={to} onChange={(e) => setTo(e.target.value)}>{allIds.map((id) => <option key={id} value={id}>{accLabel(id)}</option>)}</select></Field>
         </div>
       )}
-      {op === "transfert" && balances && <p className="muted small" style={{ margin: "0 0 10px" }}>Solde {accLabel(from)} : <strong>{fcfa(balances[from] || 0)}</strong></p>}
+      {op === "transfert" && balances && from !== "caisse" && <p className="muted small" style={{ margin: "0 0 10px" }}>Solde {accLabel(from)} : <strong>{fcfa(balances[from] || 0)}</strong></p>}
       <Field label="Montant (F)"><input className="input num" type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" autoFocus /></Field>
       <Field label="Note (facultatif)"><input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder={op === "depot" ? "ex : dépôt d'espèces" : op === "retrait" ? "ex : retrait au guichet" : ""} /></Field>
       {op === "transfert" && from === to && <p className="neg small" style={{ margin: 0 }}>Choisis deux comptes différents.</p>}
@@ -3833,9 +3833,14 @@ export default function App() {
   const saveExpense = (it) => { setExpenses((arr) => it.id ? arr.map((x) => x.id === it.id ? it : x) : [{ id: uid(), date: TODAY, by: me(), ...it }, ...arr]); log("depense", it.id ? "Dépense modifiée" : "Dépense ajoutée", `${it.label || ""} · ${fcfa(it.amount || 0)}`); setModal(null); };
 
   // ---- Trésorerie (Banque / Wave / Orange Money) ----
+  const methodAcct = (m) => { const s = (m || "").toLowerCase(); if (s.includes("wave")) return "wave"; if (s.includes("orange") || s === "om") return "om"; if (s.includes("banque") || s.includes("virement") || s.includes("vir")) return "banque"; if (s.includes("esp") || s.includes("caisse")) return "caisse"; return null; };
   const acctInit = (acc) => { const xs = treasury.filter((t) => t.type === "init" && t.account === acc).sort((a, b) => a.ts - b.ts); return xs.length ? xs[xs.length - 1].amount : 0; };
-  const acctIn = (acc) => treasury.filter((t) => (t.type === "depot" && t.account === acc) || (t.type === "transfert" && t.to === acc)).reduce((s, t) => s + t.amount, 0);
-  const acctOut = (acc) => treasury.filter((t) => (t.type === "retrait" && t.account === acc) || (t.type === "transfert" && t.account === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctPayIn = (acc) => payments.filter((p) => methodAcct(p.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0);
+  const acctPayOut = (acc) => purchasePayments.filter((p) => methodAcct(p.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0) + expenses.filter((e) => methodAcct(e.pay) === acc).reduce((s, t) => s + (t.amount || 0), 0);
+  const acctManIn = (acc) => treasury.filter((t) => (t.type === "depot" && t.account === acc) || (t.type === "transfert" && t.to === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctManOut = (acc) => treasury.filter((t) => (t.type === "retrait" && t.account === acc) || (t.type === "transfert" && t.account === acc)).reduce((s, t) => s + t.amount, 0);
+  const acctIn = (acc) => acctPayIn(acc) + acctManIn(acc);
+  const acctOut = (acc) => acctPayOut(acc) + acctManOut(acc);
   const acctBal = (acc) => acctInit(acc) + acctIn(acc) - acctOut(acc);
   const treasuryBalances = { banque: acctBal("banque"), wave: acctBal("wave"), om: acctBal("om"), caisse: acctBal("caisse") };
   const accLabelT = (id) => (TREASURY_ACCOUNTS.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
@@ -4236,8 +4241,20 @@ export default function App() {
 
   const renderSales = () => {
     const list = sortColl("sales", sales.filter((s) => (s.label + s.client).toLowerCase().includes(q.toLowerCase())));
+    const caJour = sales.filter((s) => s.date === TODAY).reduce((a, b) => a + (b.total || 0), 0);
+    const nbJour = sales.filter((s) => s.date === TODAY).length;
+    const moisPref = TODAY.slice(0, 7);
+    const caMois = sales.filter((s) => (s.date || "").slice(0, 7) === moisPref).reduce((a, b) => a + (b.total || 0), 0);
+    const resteEnc = sales.reduce((a, s) => a + Math.max(0, balanceFor(s)), 0);
     return (
-      <div className="card">
+      <>
+        <div className="kpis">
+          <Kpi icon={TrendingUp} label="Ventes du jour" value={fcfa(caJour)} sub={`${nbJour} vente(s)`} tone="gold" />
+          <Kpi icon={Coins} label="Ventes du mois" value={fcfa(caMois)} sub="ce mois-ci" tone="green" />
+          <Kpi icon={Wallet} label="Reste à encaisser" value={fcfa(resteEnc)} sub="crédits en cours" tone="clay" />
+          <Kpi icon={Receipt} label="Nombre de ventes" value={String(sales.length)} sub="depuis le début" tone="gold" />
+        </div>
+        <div className="card">
         <div className="card-head">
           <h3>Historique des ventes <span className="count">{sales.length}</span></h3>
           <div className="head-btns">
@@ -4270,11 +4287,25 @@ export default function App() {
           </tbody>
         </table>
       </div>
+      </>
     );
   };
 
-  const renderBuy = () => (
-    <div className="card">
+  const renderBuy = () => {
+    const achJour = purchases.filter((p) => p.date === TODAY).reduce((a, b) => a + (b.total || 0), 0);
+    const nbAchJour = purchases.filter((p) => p.date === TODAY).length;
+    const moisPref = TODAY.slice(0, 7);
+    const achMois = purchases.filter((p) => (p.date || "").slice(0, 7) === moisPref).reduce((a, b) => a + (b.total || 0), 0);
+    const restePay = purchases.reduce((a, p) => a + Math.max(0, purchaseBalance(p)), 0);
+    return (
+    <>
+      <div className="kpis">
+        <Kpi icon={TrendingDown} label="Achats du jour" value={fcfa(achJour)} sub={`${nbAchJour} achat(s)`} tone="clay" />
+        <Kpi icon={Coins} label="Achats du mois" value={fcfa(achMois)} sub="ce mois-ci" tone="green" />
+        <Kpi icon={Wallet} label="Reste à payer" value={fcfa(restePay)} sub="rachats non soldés" tone="clay" />
+        <Kpi icon={Scale} label="Nombre d'achats" value={String(purchases.length)} sub="depuis le début" tone="gold" />
+      </div>
+      <div className="card">
       <div className="card-head">
         <h3>Achats d'or (rachats clients) <span className="count">{purchases.length}</span></h3>
         <div className="head-btns">
@@ -4311,7 +4342,9 @@ export default function App() {
         </tbody>
       </table>
     </div>
-  );
+    </>
+    );
+  };
 
   const clientCell = (name) => name
     ? <button className="name-link" onClick={() => setClientView(name)}>{name}</button>
@@ -4819,10 +4852,11 @@ export default function App() {
     const totalSolde = TREASURY_ACCOUNTS.reduce((s, acc) => s + acctBal(acc.id), 0);
     return (
       <>
-        <div className="card-head" style={{ marginBottom: 14 }}>
+        <div className="card-head" style={{ marginBottom: 6 }}>
           <h3>Soldes des comptes — total {fcfa(totalSolde)}</h3>
           {canEditB && <button className="btn btn-gold" onClick={() => setModal({ type: "treasury", op: "transfert", account: "banque" })}><ArrowDownLeft size={15} /> Nouveau transfert</button>}
         </div>
+        <p className="muted small" style={{ margin: "0 0 14px" }}>Les paiements par Wave, Orange Money et Banque alimentent automatiquement ces comptes. Les dépôts, retraits et transferts s'ajoutent au calcul.</p>
         <div className="acct-grid">
           {TREASURY_ACCOUNTS.map((acc) => (
             <div className={"card acct-card acct-" + acc.id} key={acc.id}>
