@@ -605,22 +605,29 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
 function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSell = true, canBuy = true }) {
   // 1 - Valeur d'un article
   const [k1, setK1] = useState(21);
+  const [t1, setT1] = useState(defTitre(21));
   const [w1, setW1] = useState("");
   const [ppg1, setPpg1] = useState("");
   const [facon1, setFacon1] = useState("");
+  const onK1 = (k) => { setK1(k); if (KARAT_TITRES[k]) setT1(defTitre(k)); };
+  const has1 = !!KARAT_TITRES[k1];
   const wv = parseFloat(w1) || 0;
   const refPpg = parseFloat(ppg1) || 0;
-  const sellG = k1 ? prices[k1].vente : refPpg * (1 + (mVente || 0) / 100);
-  const buyG = k1 ? prices[k1].achat : refPpg * (1 - (mAchat || 0) / 100);
+  const sellG = has1 ? priceFromTitre(prices[24].vente, t1) : (k1 ? prices[k1].vente : refPpg * (1 + (mVente || 0) / 100));
+  const buyG = has1 ? priceFromTitre(prices[24].achat, t1) : (k1 ? prices[k1].achat : refPpg * (1 - (mAchat || 0) / 100));
   const fac = parseFloat(facon1) || 0;
   const sellTotal = wv * sellG + fac;
   const buyTotal = wv * buyG;
 
   // 2 - Équivalent or pur
   const [k2, setK2] = useState(18);
+  const [t2, setT2] = useState(defTitre(18));
   const [w2, setW2] = useState("");
+  const onK2 = (k) => { setK2(k); if (KARAT_TITRES[k]) setT2(defTitre(k)); };
+  const has2 = !!KARAT_TITRES[k2];
   const wv2 = parseFloat(w2) || 0;
-  const pureW = wv2 * purity(k2);
+  const pureFrac2 = has2 ? t2 / 100 : purity(k2);
+  const pureW = wv2 * pureFrac2;
   const pureVal = pureW * perGram24;
 
   // 3 - Convertisseur grammes <-> FCFA (or pur 24K)
@@ -674,11 +681,17 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSel
         <div className="card-head"><h3>Valeur d'un article</h3></div>
         <div className="grid2">
           <Field label="Carat">
-            <select className="input" value={k1} onChange={(e) => setK1(parseInt(e.target.value))}>
-              {KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+            <select className="input" value={k1} onChange={(e) => onK1(parseInt(e.target.value))}>
+              {GOLD_KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+              <option value="14">14K</option>
               <option value="0">Sans carat</option>
             </select>
           </Field>
+          {has1 && (
+            <Field label="Titre (pureté)">
+              <select className="input" value={t1} onChange={(e) => setT1(parseInt(e.target.value))}>{KARAT_TITRES[k1].map((t) => <option key={t} value={t}>{k1},{t} · {t}%</option>)}</select>
+            </Field>
+          )}
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={w1} onChange={(e) => setW1(e.target.value)} placeholder="0,0" /></Field>
           {!k1 && <Field label="Prix de référence / g"><input className="input num" type="number" value={ppg1} onChange={(e) => setPpg1(e.target.value)} placeholder="0" /><span className="field-hint">Valeur de base du gramme (ni achat ni vente) — l'app en déduit les deux</span></Field>}
           <Field label="Façon (optionnel)"><input className="input num" type="number" value={facon1} onChange={(e) => setFacon1(e.target.value)} placeholder="0" /><span className="field-hint">Main-d'œuvre ajoutée au prix de vente (bijoux)</span></Field>
@@ -687,12 +700,12 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSel
           <div><span className="lab">Tu rachètes</span><span className="val" style={{ color: "var(--clay)" }}>{fcfa(buyTotal)}</span></div>
           <div><span className="lab">Tu vends</span><span className="val" style={{ color: "var(--green)" }}>{fcfa(sellTotal)}</span></div>
         </div>
-        {k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix de référence {fcfa(refPpg)}/g · rachat −{mAchat}% = {fcfa(buyG)}/g · vente +{mVente}% = {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p>}
+        {has1 ? <p className="src-note">Titre {k1},{t1} ({t1}%) · rachat {fcfa(buyG)}/g · vente {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : k1 ? <p className="src-note">À {fcfa(buyG)}/g (rachat) · {fcfa(sellG)}/g (vente){fac ? ` · + façon ${fcfa(fac)}` : ""}</p> : <p className="src-note">Prix de référence {fcfa(refPpg)}/g · rachat −{mAchat}% = {fcfa(buyG)}/g · vente +{mVente}% = {fcfa(sellG)}/g{fac ? ` · + façon ${fcfa(fac)}` : ""}</p>}
         {!k1 && <p className="calc-hint">ℹ️ Le <b>prix de référence</b> est ta base du gramme (la valeur de l'or au moment du calcul). L'app en déduit automatiquement le <b style={{ color: "var(--clay)" }}>rachat</b> (− marge) et la <b style={{ color: "var(--green)" }}>vente</b> (+ marge). Pour un calcul exact selon la pureté, choisis plutôt le <b>carat réel</b> au lieu de « Sans carat ».</p>}
         {onUse && (canBuy || canSell) && (
           <div className="data-actions" style={{ marginTop: 12 }}>
-            {canBuy && <button className="btn btn-line" disabled={!(wv > 0 && buyG > 0)} onClick={() => onUse("purchase", { karat: k1, weight: wv, ppg: buyG })}><ArrowDownLeft size={15} /> Enregistrer le rachat</button>}
-            {canSell && <button className="btn btn-gold" disabled={!(wv > 0 && sellG > 0)} onClick={() => onUse("sale", { kind: "or", karat: k1, weight: wv, ppg: sellG, facon: fac })}><Plus size={15} /> Enregistrer la vente</button>}
+            {canBuy && <button className="btn btn-line" disabled={!(wv > 0 && buyG > 0)} onClick={() => onUse("purchase", { karat: k1, titre: has1 ? t1 : null, weight: wv, ppg: buyG })}><ArrowDownLeft size={15} /> Enregistrer le rachat</button>}
+            {canSell && <button className="btn btn-gold" disabled={!(wv > 0 && sellG > 0)} onClick={() => onUse("sale", { kind: "or", karat: k1, titre: has1 ? t1 : null, weight: wv, ppg: sellG, facon: fac })}><Plus size={15} /> Enregistrer la vente</button>}
           </div>
         )}
       </div>
@@ -701,15 +714,20 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSel
         <div className="card-head"><h3>Équivalent or pur (24K)</h3></div>
         <div className="grid2">
           <Field label="Carat">
-            <select className="input" value={k2} onChange={(e) => setK2(parseInt(e.target.value))}>{KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}</select>
+            <select className="input" value={k2} onChange={(e) => onK2(parseInt(e.target.value))}>{GOLD_KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}<option value="14">14K</option></select>
           </Field>
+          {has2 && (
+            <Field label="Titre (pureté)">
+              <select className="input" value={t2} onChange={(e) => setT2(parseInt(e.target.value))}>{KARAT_TITRES[k2].map((t) => <option key={t} value={t}>{k2},{t} · {t}%</option>)}</select>
+            </Field>
+          )}
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={w2} onChange={(e) => setW2(e.target.value)} placeholder="0,0" /></Field>
         </div>
         <div className="calc-res">
-          <div><span className="lab">Or pur ({Math.round(purity(k2) * 100)}%)</span><span className="val">{g(pureW)}</span></div>
+          <div><span className="lab">Or pur ({Math.round(pureFrac2 * 100)}%)</span><span className="val">{g(pureW)}</span></div>
           <div><span className="lab">Valeur or pur</span><span className="val" style={{ color: "var(--gold)" }}>{fcfa(pureVal)}</span></div>
         </div>
-        <p className="src-note">{g(wv2)} de {k2}K contient {g(pureW)} d'or pur (cours 24K : {fcfa(perGram24)}/g).</p>
+        <p className="src-note">{g(wv2)} de {k2}K{has2 ? ` (${t2}%)` : ""} contient {g(pureW)} d'or pur (cours 24K : {fcfa(perGram24)}/g).</p>
       </div>
 
       <div className="card">
