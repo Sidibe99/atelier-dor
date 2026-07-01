@@ -3717,6 +3717,8 @@ export default function App() {
   }, [perGram24, prime, mVente, mAchat]);
 
   const agoTxt = ago < 60 ? `il y a ${ago}s` : `il y a ${Math.floor(ago / 60)} min`;
+  const [coursOpen, setCoursOpen] = useState(null);
+  useEffect(() => { if (!coursOpen && spot > 0 && rate > 0) setCoursOpen({ spot, rate }); }, [spot, rate, coursOpen]);
 
   /* ------------------------------ calculs ------------------------------ */
   const m = useMemo(() => {
@@ -5231,8 +5233,38 @@ export default function App() {
     );
   };
 
-  const renderCours = () => (
+  const renderCours = () => {
+    const rS = coursOpen ? coursOpen.spot : spot;
+    const rR = coursOpen ? coursOpen.rate : rate;
+    const vpct = (now, ref) => (ref && ref > 0) ? ((now - ref) / ref) * 100 : 0;
+    const goldVar = vpct(spot, rS), rateVar = vpct(rate, rR), onceVar = vpct(spot * rate, rS * rR);
+    const tick = [
+      ["OR", `${dec(spot)} $/oz`, goldVar],
+      ["OR", `${dec(spot / OZ)} $/g`, goldVar],
+      ["OR 24K", `${fcfa(perGram24)}/g`, goldVar],
+      ["OR 22K", `${fcfa(prices[22].world)}/g`, goldVar],
+      ["OR 21K", `${fcfa(prices[21].world)}/g`, goldVar],
+      ["OR 18K", `${fcfa(prices[18].world)}/g`, goldVar],
+      ["1 ONCE", fcfa(spot * rate), onceVar],
+      ["USD/FCFA", `${nf.format(Math.round(rate))} F`, rateVar],
+      ["EUR/FCFA", `655,957 F`, 0],
+    ];
+    const chgTxt = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + Math.abs(c).toFixed(2).replace(".", ",") + "%";
+    return (
     <>
+      <div className="ticker" title="Cours en direct — variation depuis l'ouverture de l'app">
+        <div className="ticker-track">
+          {[0, 1].map((dup) => tick.map(([lab, val, chg], idx) => {
+            const up = chg > 0.005, down = chg < -0.005;
+            return (
+              <span className="tk" key={dup + "-" + idx}>
+                <b>{lab}</b><span className="num">{val}</span>
+                <span className={`tk-chg ${up ? "up" : down ? "down" : "flat"}`}>{up ? "▲" : down ? "▼" : "="} {chgTxt(chg)}</span>
+              </span>
+            );
+          }))}
+        </div>
+      </div>
       <div className="cours-hero">
         <div className="ch-top">
           <div className="live-tag"><span className={`dot ${coursLoading ? "pulse" : ""}`} />{coursLoading ? "Actualisation…" : "En direct"}</div>
@@ -5290,7 +5322,8 @@ export default function App() {
 
       <p className="disclaim">Données de marché à titre indicatif — à vérifier avant toute transaction importante.</p>
     </>
-  );
+    );
+  };
 
   const syncShopName = async (nm) => {
     const name = (nm || "").trim();
@@ -5936,6 +5969,20 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .scrim { display:none; }
 
 /* ---- cours en direct ---- */
+.ticker { overflow:hidden; background:var(--ink); border-radius:12px; padding:10px 0; margin-bottom:14px; position:relative; box-shadow:0 8px 22px rgba(28,22,17,.22); }
+.ticker::before, .ticker::after { content:""; position:absolute; top:0; bottom:0; width:46px; z-index:2; pointer-events:none; }
+.ticker::before { left:0; background:linear-gradient(90deg,var(--ink),transparent); }
+.ticker::after { right:0; background:linear-gradient(270deg,var(--ink),transparent); }
+.ticker-track { display:inline-flex; white-space:nowrap; will-change:transform; animation:tkscroll 38s linear infinite; }
+.ticker:hover .ticker-track { animation-play-state:paused; }
+.tk { display:inline-flex; align-items:center; gap:8px; padding:0 22px; font-size:13px; color:#e9e0d0; border-right:1px solid rgba(255,255,255,.09); }
+.tk b { color:var(--gold2,#d9a441); font-weight:800; letter-spacing:.02em; }
+.tk .num { font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+.tk-chg { font-size:11.5px; font-weight:700; font-variant-numeric:tabular-nums; display:inline-flex; align-items:center; gap:2px; }
+.tk-chg.up { color:#5fce8f; }
+.tk-chg.down { color:#e88a76; }
+.tk-chg.flat { color:#9a8f7c; }
+@keyframes tkscroll { from { transform:translateX(0); } to { transform:translateX(-50%); } }
 .cours-hero { background:linear-gradient(155deg,#241c14,#1c1611); color:#ece3d2; border-radius:16px; padding:20px; margin-bottom:18px; box-shadow:0 10px 26px rgba(28,22,17,.2); }
 .cours-hero h2 { color:#fff; font-size:23px; margin-top:8px; }
 .ch-sub { color:#a99c84; font-size:12.5px; margin:3px 0 0; max-width:520px; }
