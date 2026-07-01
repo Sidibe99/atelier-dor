@@ -102,6 +102,11 @@ const getSignedUrl = async (path) => {
 
 
 const KARATS = [24, 22, 21, 18, 14];
+// Titres (pureté %) par carat, échelle marché 75→100
+const KARAT_TITRES = { 18: [75, 76, 77], 19: [78, 79, 80], 20: [81, 82, 83, 84], 21: [85, 86, 87, 88, 89], 22: [90, 91, 92, 93, 94], 23: [95, 96, 97], 24: [98, 99, 100] };
+const GOLD_KARATS = [24, 23, 22, 21, 20, 19, 18]; // carats avec titre (pureté)
+const defTitre = (k) => { const a = KARAT_TITRES[k]; return a ? a[Math.floor(a.length / 2)] : null; };
+const priceFromTitre = (base24, titre) => Math.round((base24 || 0) * (titre || 0) / 100);
 const OZ = 31.1034768;            // 1 once troy en grammes
 const PAY_METHODS = ["Espèces", "Wave", "Orange Money", "Banque"];
 const KIND_LABEL = { or: "Or", bijoux: "Bijoux", divers: "Divers" };
@@ -440,20 +445,33 @@ const Modal = ({ title, sub, onClose, children, footer }) => (
 
 /* ------------------------------- modales -------------------------------- */
 const ConfirmModal = ({ title, message, okLabel, danger, onCancel, onOk }) => (
-  <Modal title={title || "Confirmation"} onClose={onCancel}
-    footer={<>
-      <button className="btn btn-line" onClick={onCancel}>Annuler</button>
-      <button className={`btn ${danger ? "btn-clay" : "btn-gold"}`} onClick={onOk}>{okLabel || "Confirmer"}</button>
-    </>}>
-    <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>{message}</p>
-  </Modal>
+  <div className="overlay ad-pop" onClick={onCancel}>
+    <div className="notice-card" onClick={(e) => e.stopPropagation()}>
+      <div className={`notice-ico ${danger ? "warn" : "ask"}`}>{danger ? <AlertTriangle size={26} /> : <Check size={26} />}</div>
+      <h3 className="notice-title">{title || "Confirmation"}</h3>
+      {message && <p className="notice-msg">{message}</p>}
+      <div className="notice-acts">
+        <button className="btn btn-line" onClick={onCancel}>Annuler</button>
+        <button className={`btn ${danger ? "btn-clay" : "btn-gold"}`} onClick={onOk}>{okLabel || "Confirmer"}</button>
+      </div>
+    </div>
+  </div>
 );
-const NoticeModal = ({ title, message, onClose }) => (
-  <Modal title={title || "Information"} onClose={onClose}
-    footer={<button className="btn btn-gold" onClick={onClose}>OK</button>}>
-    <p className="muted" style={{ margin: 0, lineHeight: 1.5 }}>{message}</p>
-  </Modal>
-);
+const NoticeModal = ({ title, message, onClose }) => {
+  const bad = /impossible|limite|erreur|bloqu|illisible|invalide|refus|échou|aucun|pas /i.test((title || "") + " " + (message || ""));
+  return (
+    <div className="overlay ad-pop" onClick={onClose}>
+      <div className="notice-card" onClick={(e) => e.stopPropagation()}>
+        <div className={`notice-ico ${bad ? "warn" : "ok"}`}>{bad ? <AlertTriangle size={26} /> : <Check size={26} />}</div>
+        <h3 className="notice-title">{title || (bad ? "Attention" : "C'est fait")}</h3>
+        {message && <p className="notice-msg">{message}</p>}
+        <div className="notice-acts">
+          <button className="btn btn-gold" onClick={onClose}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticle, init }) {
   const i = init || {};
   const [kind, setKind] = useState(i.kind || "or");
@@ -461,8 +479,9 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   const [pay, setPay] = useState("Espèces");
   const [stockId, setStockId] = useState("");
   const [karat, setKarat] = useState(i.karat != null ? i.karat : 21);
+  const [titre, setTitre] = useState(i.titre != null ? i.titre : defTitre(i.karat != null ? i.karat : 21));
   const [weight, setWeight] = useState(i.weight != null ? String(i.weight) : "");
-  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : Math.round(prices[21].vente));
+  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : priceFromTitre(prices[24].vente, defTitre(i.karat != null ? i.karat : 21)));
   const [facon, setFacon] = useState(i.facon ? String(i.facon) : "");
   const [dId, setDId] = useState("");
   const [dQty, setDQty] = useState(1);
@@ -473,9 +492,10 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   const onPickStock = (id) => {
     setStockId(id);
     const it = gold.find((x) => x.id === id);
-    if (it) { setKarat(it.karat); setWeight(String(it.weight)); setPpg(Math.round(prices[it.karat].vente)); }
+    if (it) { setKarat(it.karat); const t = it.titre != null ? it.titre : defTitre(it.karat); setTitre(t); setWeight(String(it.weight)); setPpg(KARAT_TITRES[it.karat] ? priceFromTitre(prices[24].vente, t) : (prices[it.karat] ? Math.round(prices[it.karat].vente) : 0)); }
   };
-  const onKarat = (k) => { setKarat(k); if (k && prices[k]) setPpg(Math.round(prices[k].vente)); };
+  const onKarat = (k) => { setKarat(k); if (KARAT_TITRES[k]) { const t = defTitre(k); setTitre(t); setPpg(priceFromTitre(prices[24].vente, t)); } else { setTitre(null); if (k && prices[k]) setPpg(Math.round(prices[k].vente)); } };
+  const onTitre = (t) => { setTitre(t); setPpg(priceFromTitre(prices[24].vente, t)); };
 
   const faconV = kind === "bijoux" ? (parseFloat(facon) || 0) : 0;
   const orTotal = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0) + faconV;
@@ -495,8 +515,8 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
       const name = it ? it.type : (customName.trim() || defType);
       onSave({
         kind, client, pay, total: orTotal, cost, stockId, paid,
-        label: `${name}${karat ? ` ${karat}K` : ""} · ${g(parseFloat(weight))}`,
-        karat, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: faconV,
+        label: `${name}${karat ? ` ${karat}K` : ""}${titre ? ` (${titre}%)` : ""} · ${g(parseFloat(weight))}`,
+        karat, titre, weight: parseFloat(weight), ppg: parseFloat(ppg), facon: faconV,
         itemType: name,
       });
     } else {
@@ -534,12 +554,20 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
           {!stockId && <Field label="Désignation (optionnel)"><input className="input" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder={kind === "bijoux" ? "ex : Bague mariage" : "ex : Lingot, Chaîne…"} /></Field>}
           <Field label="Carat">
             <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>
-              {KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+              {GOLD_KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}
+              <option value="14">14K</option>
               <option value="0">Sans carat</option>
             </select>
           </Field>
+          {KARAT_TITRES[karat] && (
+            <Field label="Titre (pureté)">
+              <select className="input" value={titre} onChange={(e) => onTitre(parseInt(e.target.value))}>
+                {KARAT_TITRES[karat].map((t) => <option key={t} value={t}>{karat},{t} · {t}%</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0,0" /></Field>
-          <Field label="Prix / g (cours du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} /></Field>
+          <Field label="Prix / g (cours du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} />{KARAT_TITRES[karat] && <span className="field-hint">Calculé : cours 24K × {titre}% (modifiable)</span>}</Field>
           {kind === "bijoux" && <Field label="Façon / main d'œuvre"><input className="input num" type="number" value={facon} onChange={(e) => setFacon(e.target.value)} placeholder="0" /></Field>}
           <Field label="Paiement">
             <select className="input" value={pay} onChange={(e) => setPay(e.target.value)}>{PAY_METHODS.map((p) => <option key={p}>{p}</option>)}</select>
@@ -741,12 +769,14 @@ function PurchaseModal({ prices, clients, onClose, onSave, init }) {
   const i = init || {};
   const [client, setClient] = useState("");
   const [karat, setKarat] = useState(i.karat != null ? i.karat : 18);
+  const [titre, setTitre] = useState(i.titre != null ? i.titre : defTitre(i.karat != null ? i.karat : 18));
   const [weight, setWeight] = useState(i.weight != null ? String(i.weight) : "");
-  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : Math.round(prices[18].achat));
+  const [ppg, setPpg] = useState(i.ppg != null ? Math.round(i.ppg) : priceFromTitre(prices[24].achat, defTitre(i.karat != null ? i.karat : 18)));
   const [note, setNote] = useState("");
   const [pay, setPay] = useState("Espèces");
   const [paidNow, setPaidNow] = useState("");
-  const onKarat = (k) => { setKarat(k); if (k && prices[k]) setPpg(Math.round(prices[k].achat)); };
+  const onKarat = (k) => { setKarat(k); if (KARAT_TITRES[k]) { const t = defTitre(k); setTitre(t); setPpg(priceFromTitre(prices[24].achat, t)); } else { setTitre(null); if (k && prices[k]) setPpg(Math.round(prices[k].achat)); } };
+  const onTitre = (t) => { setTitre(t); setPpg(priceFromTitre(prices[24].achat, t)); };
   const total = (parseFloat(weight) || 0) * (parseFloat(ppg) || 0);
   const paid = paidNow === "" ? total : Math.min(parseFloat(paidNow) || 0, total);
   const reste = total - paid;
@@ -757,15 +787,20 @@ function PurchaseModal({ prices, clients, onClose, onSave, init }) {
         <div className="foot-total">À payer <strong className="num">{fcfa(total)}</strong></div>
         <div className="foot-actions">
           <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, weight: parseFloat(weight), ppg: parseFloat(ppg), total, paid, pay, note })}>Enregistrer & ajouter au stock</button>
+          <button className="btn btn-clay" disabled={!valid} onClick={() => onSave({ client, karat, titre, weight: parseFloat(weight), ppg: parseFloat(ppg), total, paid, pay, note })}>Enregistrer & ajouter au stock</button>
         </div>
       </>}>
       <div className="grid2">
         <Field label="Carat">
-          <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>{KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}<option value="0">Sans carat (or brut)</option></select>
+          <select className="input" value={karat} onChange={(e) => onKarat(parseInt(e.target.value))}>{GOLD_KARATS.map((k) => <option key={k} value={k}>{k}K</option>)}<option value="14">14K</option><option value="0">Sans carat (or brut)</option></select>
         </Field>
+        {KARAT_TITRES[karat] && (
+          <Field label="Titre (pureté)">
+            <select className="input" value={titre} onChange={(e) => onTitre(parseInt(e.target.value))}>{KARAT_TITRES[karat].map((t) => <option key={t} value={t}>{karat},{t} · {t}%</option>)}</select>
+          </Field>
+        )}
         <Field label="Poids (g)"><input className="input num" type="number" step="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="0,0" /></Field>
-        <Field label="Prix / g (rachat du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} /></Field>
+        <Field label="Prix / g (rachat du jour)"><input className="input num" type="number" value={ppg} onChange={(e) => setPpg(e.target.value)} />{KARAT_TITRES[karat] && <span className="field-hint">Calculé : rachat 24K × {titre}% (modifiable)</span>}</Field>
         <Field label="Client">
           <input className="input" list="cl-list2" value={client} onChange={(e) => setClient(e.target.value)} placeholder="Nom du vendeur" />
           <datalist id="cl-list2">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
@@ -3833,7 +3868,7 @@ export default function App() {
     const rec = { id: uid(), date: TODAY, time: nowTime(), no: "A" + Date.now().toString(36).slice(-5).toUpperCase(), kind: "purchase", by: me(), ...p };
     setPurchases((arr) => [rec, ...arr]);
     setPurchasePayments((arr) => [{ id: uid(), purchaseId: rec.id, date: TODAY, time: rec.time, amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces", by: me() }, ...arr]);
-    setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}`, karat: p.karat, weight: p.weight, qty: 1, cat: "or", origin: { from: "rachat", client: p.client || "", date: TODAY, price: p.total, purchaseId: rec.id } }, ...arr]);
+    setGold((arr) => [{ id: uid(), type: "Débris", desc: `Rachat ${p.client || "client"}${p.titre ? " (" + p.titre + "%)" : ""}`, karat: p.karat, titre: p.titre != null ? p.titre : null, weight: p.weight, qty: 1, cat: "or", origin: { from: "rachat", client: p.client || "", date: TODAY, price: p.total, purchaseId: rec.id } }, ...arr]);
     log("achat", "Achat d'or créé", `${p.karat ? p.karat + "K" : "or brut"} · ${g(p.weight)} · ${fcfa(p.total)}${p.client ? " · " + p.client : ""}`);
     setModal(null);
     setReceipt(buildReceipt(rec));
@@ -5859,6 +5894,18 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 
 .overlay { position:fixed; inset:0; background:rgba(28,22,17,.45); backdrop-filter:blur(3px);
   display:grid; place-items:center; z-index:200; padding:18px; }
+.notice-card { background:var(--paper); border-radius:20px; width:100%; max-width:400px; padding:26px 24px 20px; text-align:center;
+  box-shadow:0 30px 70px rgba(28,22,17,.35); border:1px solid var(--line); }
+.notice-ico { width:64px; height:64px; border-radius:50%; display:grid; place-items:center; margin:0 auto 16px; color:#fff; }
+.notice-ico.ok, .notice-ico.ask { background:linear-gradient(150deg,var(--gold2,#d9a441),var(--gold)); box-shadow:0 8px 22px rgba(184,134,47,.4); }
+.notice-ico.warn { background:linear-gradient(150deg,#c56a54,var(--clay)); box-shadow:0 8px 22px rgba(156,74,53,.4); }
+.notice-title { font-family:'Fraunces',Georgia,serif; font-size:20px; color:var(--ink); margin:0 0 6px; }
+.notice-msg { color:var(--muted); line-height:1.55; margin:0 0 20px; font-size:14.5px; }
+.notice-acts { display:flex; gap:10px; justify-content:center; }
+.notice-acts .btn { min-width:110px; justify-content:center; }
+.ad-pop .notice-card { animation:adpop .22s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes adpop { from { opacity:0; transform:translateY(10px) scale(.94); } to { opacity:1; transform:none; } }
+@media (max-width:460px){ .notice-acts { flex-direction:column-reverse; } .notice-acts .btn { width:100%; } }
 .modal { background:var(--paper); border-radius:16px; width:100%; max-width:560px; max-height:92vh;
   overflow:auto; box-shadow:0 24px 60px rgba(28,22,17,.3); }
 .modal-head { display:flex; justify-content:space-between; align-items:flex-start; padding:18px 20px 12px; }
