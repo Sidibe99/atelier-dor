@@ -4204,6 +4204,7 @@ export default function App() {
     const showGuide = isPatron && !guideDismissed && guideCount < guideSteps.length;
     return (
     <>
+      {renderTicker()}
       {showGuide && (
         <div className="card guide-card">
           <div className="guide-head">
@@ -5233,7 +5234,7 @@ export default function App() {
     );
   };
 
-  const renderCours = () => {
+  const renderTicker = () => {
     const rS = coursOpen ? coursOpen.spot : spot;
     const rR = coursOpen ? coursOpen.rate : rate;
     const vpct = (now, ref) => (ref && ref > 0) ? ((now - ref) / ref) * 100 : 0;
@@ -5251,7 +5252,6 @@ export default function App() {
     ];
     const chgTxt = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + Math.abs(c).toFixed(2).replace(".", ",") + "%";
     return (
-    <>
       <div className="ticker" title="Cours en direct — variation depuis l'ouverture de l'app">
         <div className="ticker-track">
           {[0, 1].map((dup) => tick.map(([lab, val, chg], idx) => {
@@ -5265,6 +5265,13 @@ export default function App() {
           }))}
         </div>
       </div>
+    );
+  };
+
+  const renderCours = () => {
+    return (
+    <>
+      {renderTicker()}
       <div className="cours-hero">
         <div className="ch-top">
           <div className="live-tag"><span className={`dot ${coursLoading ? "pulse" : ""}`} />{coursLoading ? "Actualisation…" : "En direct"}</div>
