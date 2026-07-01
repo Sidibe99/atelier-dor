@@ -4848,13 +4848,12 @@ export default function App() {
         <div className="card">
           <div className="card-head"><h3>Historique des opérations</h3></div>
           <table className="table">
-            <thead><tr><th>Date</th><th>Opération</th><th className="hide-sm">Compte</th><th className="r">Montant</th><th className="hide-sm">Note</th>{canEditB && <th></th>}</tr></thead>
+            <thead><tr><th>Date</th><th>Opération</th><th className="r">Montant</th><th className="hide-sm">Note</th>{canEditB && <th></th>}</tr></thead>
             <tbody>
-              {hist.length === 0 ? <tr><td colSpan={canEditB ? 6 : 5} className="muted small">Aucune opération enregistrée.</td></tr> : hist.map((t) => (
+              {hist.length === 0 ? <tr><td colSpan={canEditB ? 5 : 4} className="muted small">Aucune opération enregistrée.</td></tr> : hist.map((t) => (
                 <tr key={t.id}>
                   <td className="muted small">{t.date}</td>
-                  <td>{t.type === "depot" ? "Dépôt" : t.type === "retrait" ? "Retrait" : "Transfert"}{t.type === "transfert" && <span className="muted small"> ({accLabelT(t.account)} → {accLabelT(t.to)})</span>}</td>
-                  <td className="hide-sm">{accLabelT(t.account)}</td>
+                  <td>{t.type === "depot" ? "Dépôt " + accLabelT(t.account) : t.type === "retrait" ? "Retrait " + accLabelT(t.account) : <>Transfert <span className="muted small">{accLabelT(t.account)} → {accLabelT(t.to)}</span></>}</td>
                   <td className={`r num ${t.type === "depot" ? "pos" : t.type === "retrait" ? "neg" : ""}`}>{fcfa(t.amount)}</td>
                   <td className="hide-sm muted small">{t.note || "—"}</td>
                   {canEditB && <td className="r"><button className="icon-btn" onClick={() => delTreasury(t.id)}><Trash2 size={15} /></button></td>}
