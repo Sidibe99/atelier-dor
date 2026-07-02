@@ -20,6 +20,22 @@ const fcfa = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0F`;
 const fcfaLong = (n) => `${nbsp(nf.format(Math.round(n || 0)))}\u00a0FCFA`;
 const g = (n) => `${nbsp(nf.format(Math.round((n || 0) * 100) / 100))}\u00a0g`;
 const SEARCH_PH = { sales: "Rechercher une vente…", journal: "Rechercher dans le journal…", stock: "Rechercher un article…", clients: "Rechercher un client…" };
+
+// Appel IA : passe par le proxy sécurisé /api/ai (clé côté serveur). Repli sur l'API directe dans l'aperçu Claude.
+async function aiComplete({ system, messages, max_tokens = 1024 }) {
+  const pick = (d) => ((d && d.content) || []).map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  try {
+    const r = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ system, messages, max_tokens }) });
+    if (r.ok) { const t = pick(await r.json()); if (t) return t; }
+  } catch (e) { /* pas de proxy configuré */ }
+  if (typeof window !== "undefined" && window.storage) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens, system, messages }) });
+      const t = pick(await r.json()); if (t) return t;
+    } catch (e) { /* */ }
+  }
+  throw new Error("IA indisponible");
+}
 const dec = (n, d = 2) => (n || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: d });
 const uid = () => Math.random().toString(36).slice(2, 9);
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -602,7 +618,7 @@ function SaleModal({ prices, gold, divers, clients, onClose, onSave, onNewArticl
   );
 }
 
-function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSell = true, canBuy = true }) {
+function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, onAdvisor, canSell = true, canBuy = true }) {
   // 1 - Valeur d'un article
   const [k1, setK1] = useState(21);
   const [t1, setT1] = useState(defTitre(21));
@@ -676,6 +692,7 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, canSel
 
   return (
     <>
+    {onAdvisor && <button className="ai-cta" onClick={onAdvisor}><span className="ai-cta-ico">💡</span><span className="ai-cta-txt"><b>Conseils IA</b><small>Un doute sur un prix ou une marge ? Demande à l'assistant</small></span><span className="ai-cta-go">Demander →</span></button>}
     <div className="calc-grid">
       <div className="card">
         <div className="card-head"><h3>Valeur d'un article</h3></div>
@@ -3046,6 +3063,62 @@ function SettlePurchaseModal({ purchase, balance, onClose, onSave }) {
     </Modal>
   );
 }
+function AdvisorModal({ context, shopName, onClose }) {
+  const SUGG = [
+    "Comment améliorer mes marges ?",
+    "Que faire de mon stock d'or qui dort ?",
+    "Comment mieux gérer ma trésorerie ?",
+    "Comment récupérer mes crédits clients ?",
+    "Est-ce le bon moment pour acheter de l'or ?",
+  ];
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const listRef = useRef(null);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [msgs, busy]);
+  const system = "Tu es un conseiller expert en gestion de bijouterie et de négoce d'or au Sénégal (région de Dakar/Thiès). Tu réponds en français simple et bienveillant, avec des conseils PRATIQUES, CONCRETS et ACTIONNABLES, adaptés à un petit commerce. Appuie-toi sur les chiffres réels de la boutique ci-dessous. Sois concis (quelques points clés), évite le jargon, et donne des étapes que le patron peut appliquer tout de suite. Ne donne pas de conseils financiers réglementés ni de promesses de gains. Données de la boutique :\n" + context;
+  const send = async (text) => {
+    const q = (text != null ? text : input).trim();
+    if (!q || busy) return;
+    setInput(""); setErr(null);
+    const next = [...msgs, { role: "user", content: q }];
+    setMsgs(next); setBusy(true);
+    try {
+      const answer = await aiComplete({ system, messages: next, max_tokens: 900 });
+      setMsgs((m) => [...m, { role: "assistant", content: answer }]);
+    } catch (e) {
+      setErr("L'assistant IA n'est pas encore disponible. Vérifie que la fonction /api/ai est configurée (voir la note du développeur).");
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal advisor" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div><h3 style={{ margin: 0 }}>💡 Conseils IA</h3><p className="muted small" style={{ margin: "2px 0 0" }}>Basés sur les chiffres de {shopName || "ta boutique"}</p></div>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="advisor-body" ref={listRef}>
+          {msgs.length === 0 && !busy && (
+            <div className="advisor-empty">
+              <p className="muted small" style={{ marginTop: 0 }}>Pose ta question, ou choisis un sujet :</p>
+              <div className="advisor-sugg">{SUGG.map((s) => <button key={s} className="sugg-chip" onClick={() => send(s)}>{s}</button>)}</div>
+            </div>
+          )}
+          {msgs.map((m, i) => <div key={i} className={`adv-msg ${m.role}`}>{m.content}</div>)}
+          {busy && <div className="adv-msg assistant adv-typing">L'assistant réfléchit…</div>}
+          {err && <p className="neg small" style={{ margin: "6px 2px" }}>{err}</p>}
+        </div>
+        <div className="advisor-input">
+          <input className="input" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }} placeholder="Ex : comment augmenter mes ventes ce mois-ci ?" disabled={busy} />
+          <button className="btn btn-gold" onClick={() => send()} disabled={busy || !input.trim()}>Envoyer</button>
+        </div>
+        <p className="muted small" style={{ margin: "0 14px 12px", fontSize: 11 }}>ℹ️ Conseils indicatifs générés par IA — à confronter à ton expérience du marché.</p>
+      </div>
+    </div>
+  );
+}
 function FormulaModal({ req, onClose }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(req.msg); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) { setCopied(false); } };
@@ -3202,6 +3275,7 @@ export default function App() {
   const [acompteFor, setAcompteFor] = useState(null);
   const [settleFor, setSettleFor] = useState(null);
   const [formulaReq, setFormulaReq] = useState(null);
+  const [advisorOpen, setAdvisorOpen] = useState(false);
   const [clientView, setClientView] = useState(null);
   const [productView, setProductView] = useState(null);
   const [returnFor, setReturnFor] = useState(null);
@@ -3924,6 +3998,28 @@ export default function App() {
   const acctOut = (acc) => acctPayOut(acc) + acctManOut(acc);
   const acctBal = (acc) => acctInit(acc) + acctIn(acc) - acctOut(acc);
   const treasuryBalances = { banque: acctBal("banque"), wave: acctBal("wave"), om: acctBal("om"), caisse: acctBal("caisse") };
+  const advisorContext = () => {
+    const mois = TODAY.slice(0, 7);
+    const inMonth = (d) => (d || "").slice(0, 7) === mois;
+    const caJour = sales.filter((s) => s.date === TODAY).reduce((a, b) => a + (b.total || 0), 0);
+    const caMois = sales.filter((s) => inMonth(s.date)).reduce((a, b) => a + (b.total || 0), 0);
+    const nbVentesMois = sales.filter((s) => inMonth(s.date)).length;
+    const achatsMois = purchases.filter((p) => inMonth(p.date)).reduce((a, b) => a + (b.total || 0), 0);
+    const depMois = expenses.filter((e) => inMonth(e.date)).reduce((a, b) => a + (b.amount || 0), 0);
+    const creditClients = sales.reduce((a, s) => a + Math.max(0, balanceFor(s)), 0);
+    const stockOrPoids = gold.reduce((a, x) => a + (x.weight || 0) * (x.qty || 1), 0);
+    const stockOrValeur = gold.reduce((a, x) => a + (x.weight || 0) * (x.qty || 1) * (perGram24 * purity(x.karat || 24)), 0);
+    const treso = acctBal("banque") + acctBal("wave") + acctBal("om");
+    return [
+      `Boutique : ${shop || "—"}. Date : ${TODAY}.`,
+      `Cours or 24K du jour : ${fcfa(perGram24)}/g. Réglages : prime ${prime}%, marge vente ${mVente}%, marge rachat ${mAchat}%.`,
+      `Chiffre d'affaires du mois : ${fcfa(caMois)} sur ${nbVentesMois} ventes (aujourd'hui : ${fcfa(caJour)}).`,
+      `Rachats (achats d'or) du mois : ${fcfa(achatsMois)}. Dépenses du mois : ${fcfa(depMois)}.`,
+      `Crédits clients en cours (à encaisser) : ${fcfa(creditClients)}.`,
+      `Stock d'or : ${g(stockOrPoids)} (valeur ~ ${fcfa(stockOrValeur)}). Nombre de clients : ${clients.length}.`,
+      `Trésorerie comptes — Banque ${fcfa(acctBal("banque"))}, Wave ${fcfa(acctBal("wave"))}, Orange Money ${fcfa(acctBal("om"))} (total ${fcfa(treso)}).`,
+    ].join("\n");
+  };
   const accLabelT = (id, bene) => id === "externe" ? (bene || "Client / Fournisseur") : (TREASURY_ACCOUNTS.find((a) => a.id === id) || {}).label || (id === "caisse" ? "Caisse" : id);
   const saveTreasury = (mv) => {
     const entry = { id: uid(), ts: Date.now(), date: TODAY, by: me(), ...mv };
@@ -4205,6 +4301,11 @@ export default function App() {
     return (
     <>
       {renderTicker()}
+      <button className="ai-cta" onClick={() => setAdvisorOpen(true)}>
+        <span className="ai-cta-ico">💡</span>
+        <span className="ai-cta-txt"><b>Conseils IA</b><small>Analyse tes chiffres et te propose des actions concrètes</small></span>
+        <span className="ai-cta-go">Demander →</span>
+      </button>
       {showGuide && (
         <div className="card guide-card">
           <div className="guide-head">
@@ -5461,7 +5562,7 @@ export default function App() {
     );
   };
 
-  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, banque: renderBanque, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} canSell={canEdit("sales")} canBuy={canEdit("buy")} onUse={(type, data) => { if (type === "sale") { if (!canEdit("sales")) return; setView("sales"); setModal({ type: "sale", init: data }); } else { if (!canEdit("buy")) return; setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
+  const VIEWS = { dash: renderDash, sales: renderSales, buy: renderBuy, stock: renderStock, clients: renderClients, credits: renderCredits, caisse: renderCaisse, banque: renderBanque, depenses: renderDepenses, equipe: renderEquipe, reports: renderReports, cours: renderCours, calc: () => <GoldCalc prices={prices} spot={spot} rate={rate} perGram24={perGram24} mVente={mVente} mAchat={mAchat} canSell={canEdit("sales")} canBuy={canEdit("buy")} onUse={(type, data) => { if (type === "sale") { if (!canEdit("sales")) return; setView("sales"); setModal({ type: "sale", init: data }); } else { if (!canEdit("buy")) return; setView("buy"); setModal({ type: "purchase", init: data }); } setNavOpen(false); }} onAdvisor={() => setAdvisorOpen(true)} />, settings: renderSettings, abo: renderAbo, journal: renderJournal };
   const titles = { dash: "Tableau de bord", sales: "Ventes", buy: "Achats d'or", stock: "Stock", clients: "Clients", credits: "Crédits & dettes", caisse: "Clôture de caisse", depenses: "Dépenses & charges", equipe: "Équipe & sécurité", reports: "Rapports", cours: "Cours de l'or", calc: "Calculatrice or", settings: "Paramètres", abo: "Abonnement" };
 
   if (route === "admin") {
@@ -5619,6 +5720,7 @@ export default function App() {
       {acompteFor && <AcompteModal sale={acompteFor} balance={balanceFor(acompteFor)} onClose={() => setAcompteFor(null)} onSave={(p) => recordPayment(acompteFor, p)} />}
       {settleFor && <SettlePurchaseModal purchase={settleFor} balance={purchaseBalance(settleFor)} onClose={() => setSettleFor(null)} onSave={(p) => settlePurchase(settleFor, p)} />}
       {formulaReq && <FormulaModal req={formulaReq} onClose={() => setFormulaReq(null)} />}
+      {advisorOpen && <AdvisorModal context={advisorContext()} shopName={shop} onClose={() => setAdvisorOpen(false)} />}
       {returnFor && <RetourModal sale={returnFor} onClose={() => setReturnFor(null)} onSave={(p) => recordReturn(returnFor, p)} />}
       {confirm && (
         <ConfirmModal title={confirm.title} message={confirm.message} okLabel={confirm.okLabel} danger={confirm.danger}
@@ -5954,6 +6056,26 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
   display:grid; place-items:center; z-index:200; padding:18px; }
 .notice-card { background:var(--paper); border-radius:20px; width:100%; max-width:400px; padding:26px 24px 20px; text-align:center;
   box-shadow:0 30px 70px rgba(28,22,17,.35); border:1px solid var(--line); }
+.ai-cta { display:flex; align-items:center; gap:14px; width:100%; text-align:left; cursor:pointer; margin-bottom:16px;
+  background:linear-gradient(135deg,#241c14,#3a2c1c); color:#f2e9d8; border:1px solid rgba(184,134,47,.4); border-radius:16px; padding:14px 18px; box-shadow:0 10px 26px rgba(28,22,17,.18); transition:transform .12s, box-shadow .12s; }
+.ai-cta:hover { transform:translateY(-1px); box-shadow:0 14px 32px rgba(28,22,17,.26); }
+.ai-cta-ico { font-size:24px; width:44px; height:44px; display:grid; place-items:center; background:rgba(217,164,65,.18); border-radius:12px; flex:none; }
+.ai-cta-txt { display:flex; flex-direction:column; flex:1; min-width:0; }
+.ai-cta-txt b { font-size:15px; color:var(--gold2,#e0b85c); }
+.ai-cta-txt small { color:#c9bda6; font-size:12px; }
+.ai-cta-go { color:#f2e9d8; font-weight:700; font-size:13px; flex:none; white-space:nowrap; }
+.advisor { max-width:560px; display:flex; flex-direction:column; max-height:88vh; }
+.advisor-body { flex:1; overflow-y:auto; padding:14px 18px; display:flex; flex-direction:column; gap:10px; min-height:180px; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+.advisor-empty { color:var(--muted); }
+.advisor-sugg { display:flex; flex-direction:column; gap:8px; }
+.sugg-chip { text-align:left; background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:10px 13px; cursor:pointer; font:inherit; color:var(--text); transition:background .12s, border-color .12s; }
+.sugg-chip:hover { background:var(--gold-soft); border-color:var(--gold); }
+.adv-msg { padding:11px 14px; border-radius:14px; line-height:1.55; font-size:14px; white-space:pre-wrap; max-width:88%; }
+.adv-msg.user { align-self:flex-end; background:linear-gradient(150deg,var(--gold),var(--gold2,#c58f2f)); color:#fff; border-bottom-right-radius:5px; }
+.adv-msg.assistant { align-self:flex-start; background:var(--card); border:1px solid var(--line); color:var(--text); border-bottom-left-radius:5px; }
+.adv-typing { color:var(--muted); font-style:italic; }
+.advisor-input { display:flex; gap:8px; padding:12px 14px; border-top:1px solid var(--line); }
+.advisor-input .input { flex:1; }
 .notice-ico { width:64px; height:64px; border-radius:50%; display:grid; place-items:center; margin:0 auto 16px; color:#fff; }
 .notice-ico.ok, .notice-ico.ask { background:linear-gradient(150deg,var(--gold2,#d9a441),var(--gold)); box-shadow:0 8px 22px rgba(184,134,47,.4); }
 .notice-ico.warn { background:linear-gradient(150deg,#c56a54,var(--clay)); box-shadow:0 8px 22px rgba(156,74,53,.4); }
