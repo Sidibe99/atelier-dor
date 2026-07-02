@@ -2964,6 +2964,8 @@ function ZCard({ data, shop }) {
       <ZRow label="+ Ventes espèces" value={fcfa(data.esp)} />
       <ZRow label="− Rachats payés" value={fcfa(data.rachats)} />
       <ZRow label="− Dépenses" value={fcfa(data.depenses)} />
+      {data.transfIn > 0 && <ZRow label="+ Transferts reçus" value={fcfa(data.transfIn)} />}
+      {data.transfOut > 0 && <ZRow label="− Transferts sortis" value={fcfa(data.transfOut)} />}
       <ZRow label="= Espèces théoriques" value={fcfa(data.theorique)} strong />
       <ZRow label="Espèces comptées" value={fcfa(data.compte)} />
       <ZRow label="Écart" value={`${ec > 0 ? "+" : ""}${fcfa(ec)}`} strong tone={ecTone} />
@@ -6319,11 +6321,29 @@ a.btn { text-decoration:none; display:inline-flex; align-items:center; justify-c
 .print-receipt { display:none; }
 
 @media print {
-  @page { margin: 8mm; }
-  .sidebar, .main, .scrim, .overlay { display:none !important; }
+  @page { size: 80mm auto; margin: 0; }
+  html, body { background:#fff !important; margin:0 !important; }
+  .sidebar, .main, .scrim, .overlay, .chat-fab, .install-bar, .expiry-bar, .update-bar, .ticker { display:none !important; }
   .app { display:block !important; min-height:0 !important; background:#fff !important; }
-  .print-receipt { display:block !important; }
-  .receipt { border:none; max-width:none; padding:0; }
+  .print-receipt { display:block !important; width:80mm; margin:0 auto; padding:3mm 2.5mm; }
+  .receipt { border:none !important; box-shadow:none !important; border-radius:0 !important; width:75mm; max-width:75mm; padding:0; margin:0 auto; font-family:'JetBrains Mono', ui-monospace, monospace; font-size:13px; line-height:1.45; color:#000 !important; background:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .receipt * { color:#000 !important; background:transparent !important; }
+  .receipt .rc-head { text-align:center; margin-bottom:2mm; }
+  .receipt .rc-logo { max-width:34mm; max-height:18mm; margin:0 auto 1mm; display:block; filter:grayscale(1) contrast(1.5); }
+  .receipt .rc-shop { font-size:17px; font-weight:800; }
+  .receipt .rc-sub { font-size:11px; }
+  .receipt .rc-sep { border-top:1px solid #000; margin:2mm 0; height:0; }
+  .receipt .rc-sep.dashed { border-top:1px dashed #000; }
+  .receipt .rc-meta, .receipt .rc-item-row, .receipt .rc-total { display:flex; justify-content:space-between; gap:6px; }
+  .receipt .rc-meta.sm { font-size:11.5px; }
+  .receipt .rc-item { margin:1mm 0; }
+  .receipt .rc-item-detail { font-size:10.5px; }
+  .receipt .rc-total { font-size:15px; font-weight:800; margin-top:1mm; }
+  .receipt .rc-strong { font-weight:800; }
+  .receipt .rc-note { font-size:11px; text-align:center; margin-top:1mm; }
+  .receipt .rc-foot { text-align:center; font-size:11px; margin-top:1.5mm; }
+  .receipt .rc-foot.tiny { font-size:9.5px; }
+  .receipt svg { display:block; margin:2mm auto 0; width:34mm !important; height:34mm !important; }
 }
 
 @media (max-width:960px){
