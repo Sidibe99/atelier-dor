@@ -692,7 +692,6 @@ function GoldCalc({ prices, spot, rate, perGram24, mVente, mAchat, onUse, onAdvi
 
   return (
     <>
-    {onAdvisor && <button className="ai-cta" onClick={onAdvisor}><span className="ai-cta-ico">💡</span><span className="ai-cta-txt"><b>Conseils IA</b><small>Un doute sur un prix ou une marge ? Demande à l'assistant</small></span><span className="ai-cta-go">Demander →</span></button>}
     <div className="calc-grid">
       <div className="card">
         <div className="card-head"><h3>Valeur d'un article</h3></div>
@@ -4301,11 +4300,6 @@ export default function App() {
     return (
     <>
       {renderTicker()}
-      <button className="ai-cta" onClick={() => setAdvisorOpen(true)}>
-        <span className="ai-cta-ico">💡</span>
-        <span className="ai-cta-txt"><b>Conseils IA</b><small>Analyse tes chiffres et te propose des actions concrètes</small></span>
-        <span className="ai-cta-go">Demander →</span>
-      </button>
       {showGuide && (
         <div className="card guide-card">
           <div className="guide-head">
