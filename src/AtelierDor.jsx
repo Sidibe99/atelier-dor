@@ -3138,27 +3138,36 @@ function FormulaModal({ req, onClose }) {
   );
 }
 function PasswordChange() {
+  const [p0, setP0] = useState("");
   const [p1, setP1] = useState("");
   const [p2, setP2] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const submit = async () => {
-    if (p1.length < 6) { setMsg({ err: true, t: "6 caractères minimum." }); return; }
-    if (p1 !== p2) { setMsg({ err: true, t: "Les deux mots de passe ne correspondent pas." }); return; }
+    if (!p0) { setMsg({ err: true, t: "Entre d'abord ton mot de passe actuel." }); return; }
+    if (p1.length < 6) { setMsg({ err: true, t: "Le nouveau mot de passe doit faire 6 caractères minimum." }); return; }
+    if (p1 !== p2) { setMsg({ err: true, t: "Les deux nouveaux mots de passe ne correspondent pas." }); return; }
+    if (p1 === p0) { setMsg({ err: true, t: "Le nouveau mot de passe doit être différent de l'ancien." }); return; }
     setBusy(true); setMsg(null);
     try {
+      const { data: u } = await supabase.auth.getUser();
+      const email = u && u.user && u.user.email;
+      if (!email) { setMsg({ err: true, t: "Connexion requise pour changer le mot de passe." }); setBusy(false); return; }
+      const { error: e0 } = await supabase.auth.signInWithPassword({ email, password: p0 });
+      if (e0) { setMsg({ err: true, t: "Mot de passe actuel incorrect." }); setBusy(false); return; }
       const { error } = await supabase.auth.updateUser({ password: p1 });
       if (error) setMsg({ err: true, t: "Échec : " + (error.message || "réessaie plus tard.") });
-      else { setMsg({ err: false, t: "Mot de passe modifié avec succès." }); setP1(""); setP2(""); }
+      else { setMsg({ err: false, t: "Mot de passe modifié avec succès." }); setP0(""); setP1(""); setP2(""); }
     } catch (e) { setMsg({ err: true, t: "Connexion requise pour changer le mot de passe." }); }
     setBusy(false);
   };
   return (
     <div className="pwd-change">
+      <Field label="Mot de passe actuel"><input className="input" type="password" value={p0} onChange={(e) => { setP0(e.target.value); setMsg(null); }} placeholder="Ton mot de passe actuel" /></Field>
       <Field label="Nouveau mot de passe"><input className="input" type="password" value={p1} onChange={(e) => { setP1(e.target.value); setMsg(null); }} placeholder="6 caractères minimum" /></Field>
-      <Field label="Confirmer le mot de passe"><input className="input" type="password" value={p2} onChange={(e) => { setP2(e.target.value); setMsg(null); }} placeholder="Retape le mot de passe" /></Field>
+      <Field label="Confirmer le nouveau mot de passe"><input className="input" type="password" value={p2} onChange={(e) => { setP2(e.target.value); setMsg(null); }} placeholder="Retape le nouveau mot de passe" /></Field>
       {msg && <p className={`small ${msg.err ? "pwd-err" : "pwd-ok"}`} style={{ margin: "0 0 10px" }}>{msg.t}</p>}
-      <button className="btn btn-gold" onClick={submit} disabled={busy || !p1 || !p2}>{busy ? "Modification…" : "Changer mon mot de passe"}</button>
+      <button className="btn btn-gold" onClick={submit} disabled={busy || !p0 || !p1 || !p2}>{busy ? "Modification…" : "Changer mon mot de passe"}</button>
     </div>
   );
 }
