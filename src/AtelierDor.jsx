@@ -335,79 +335,28 @@ const STORE = {
 };
 
 /* ------------------------------- données -------------------------------- */
-const seedGold = [
-  { id: uid(), type: "Bague", desc: "Bague chevalière homme", karat: 21, weight: 8.4, qty: 3 },
-  { id: uid(), type: "Chaîne", desc: "Chaîne maille gourmette", karat: 18, weight: 12.1, qty: 5 },
-  { id: uid(), type: "Bracelet", desc: "Bracelet jonc ciselé", karat: 21, weight: 15.6, qty: 2 },
-  { id: uid(), type: "Boucles", desc: "Boucles d'oreilles créoles", karat: 18, weight: 4.2, qty: 8 },
-  { id: uid(), type: "Lingot", desc: "Lingotin 10 g certifié", karat: 24, weight: 10, qty: 4 },
-  { id: uid(), type: "Pendentif", desc: "Pendentif goutte serti", karat: 22, weight: 6.8, qty: 3 },
-  { id: uid(), type: "Débris", desc: "Or de rachat à refondre", karat: 18, weight: 22.5, qty: 1 },
-  { id: uid(), type: "Alliance", desc: "Alliance unie 3 mm", karat: 18, weight: 3.1, qty: 6 },
-];
+const seedGold = [];
 
-const seedDivers = [
-  { id: uid(), name: "Écrin bague velours", cat: "Emballage", qty: 42, cost: 800, price: 2000, unit: "pièce", min: 15 },
-  { id: uid(), name: "Pochette cadeau bijou", cat: "Emballage", qty: 8, cost: 250, price: 700, unit: "pièce", min: 20 },
-  { id: uid(), name: "Fermoir mousqueton or 18K", cat: "Fourniture", qty: 30, cost: 4500, price: 8000, unit: "pièce", min: 10 },
-  { id: uid(), name: "Chaîne vide (fil) 18K", cat: "Fourniture", qty: 14, cost: 12000, price: 18000, unit: "mètre", min: 5 },
-  { id: uid(), name: "Acide de touche (test)", cat: "Atelier", qty: 6, cost: 3000, price: 5500, unit: "flacon", min: 3 },
-  { id: uid(), name: "Borax fondant", cat: "Atelier", qty: 4, cost: 1500, price: 3000, unit: "sachet", min: 4 },
-  { id: uid(), name: "Pierre de touche", cat: "Atelier", qty: 3, cost: 6000, price: 11000, unit: "pièce", min: 2 },
-  { id: uid(), name: "Cartouche gaz chalumeau", cat: "Atelier", qty: 2, cost: 2500, price: 4500, unit: "pièce", min: 5 },
-  { id: uid(), name: "Loupe de bijoutier 10x", cat: "Outil", qty: 5, cost: 3500, price: 7000, unit: "pièce", min: 2 },
-  { id: uid(), name: "Chiffon de polissage", cat: "Outil", qty: 25, cost: 400, price: 1200, unit: "pièce", min: 10 },
-];
+const seedDivers = [];
 
-const seedClients = [
-  { id: uid(), name: "Aminata Diop", phone: "77 512 04 18", note: "Cliente fidèle — mariages" },
-  { id: uid(), name: "Mamadou Fall", phone: "76 233 87 09", note: "Revendeur Touba" },
-  { id: uid(), name: "Fatou Ndiaye", phone: "78 901 44 25", note: "" },
-  { id: uid(), name: "Ousmane Sow", phone: "77 660 12 73", note: "Rachat or régulier" },
-  { id: uid(), name: "Awa Bâ", phone: "70 145 39 56", note: "" },
-  { id: uid(), name: "Cheikh Guèye", phone: "76 788 20 41", note: "Grossiste fournitures" },
-];
+const seedClients = [];
 
-const seedSales = [
-  { id: uid(), date: daysAgo(0), kind: "bijoux", client: "Aminata Diop", label: "Bracelet jonc ciselé 21K · 15,6 g", total: 1010000, cost: 930000, pay: "Wave" },
-  { id: uid(), date: daysAgo(0), kind: "divers", client: "Cheikh Guèye", label: "Fournitures (fermoirs, fil)", total: 96000, cost: 58500, pay: "Espèces" },
-  { id: uid(), date: daysAgo(1), kind: "bijoux", client: "Fatou Ndiaye", label: "Boucles créoles 18K · 4,2 g ×2", total: 505000, cost: 460000, pay: "Espèces" },
-  { id: uid(), date: daysAgo(2), kind: "or", client: "Mamadou Fall", label: "Lingotin 10 g 24K", total: 800000, cost: 750000, pay: "Banque" },
-  { id: uid(), date: daysAgo(3), kind: "divers", client: "Awa Bâ", label: "Écrins + pochettes", total: 14000, cost: 5400, pay: "Espèces" },
-  { id: uid(), date: daysAgo(4), kind: "bijoux", client: "Ousmane Sow", label: "Chaîne gourmette 18K · 12,1 g", total: 720000, cost: 660000, pay: "Orange Money" },
-  { id: uid(), date: daysAgo(5), kind: "bijoux", client: "Aminata Diop", label: "Alliance unie 18K · 3,1 g ×2", total: 372000, cost: 330000, pay: "Espèces" },
-  { id: uid(), date: daysAgo(7), kind: "bijoux", client: "Fatou Ndiaye", label: "Pendentif goutte 22K · 6,8 g", total: 500000, cost: 452000, pay: "Wave" },
-  { id: uid(), date: daysAgo(8), kind: "divers", client: "Cheikh Guèye", label: "Loupe + acide de touche", total: 19500, cost: 9500, pay: "Espèces" },
-  { id: uid(), date: daysAgo(9), kind: "bijoux", client: "Mamadou Fall", label: "Bague chevalière 21K · 8,4 g", total: 575000, cost: 528000, pay: "Banque" },
-  { id: uid(), date: daysAgo(1), kind: "bijoux", client: "Aminata Diop", label: "Collier maille royale 21K · 18,2 g", total: 920000, cost: 845000, pay: "Espèces", paid: 400000 },
-];
+const seedSales = [];
 
 // registre des paiements : chaque vente a au moins un encaissement (le paiement initial)
 const seedPayments = seedSales.map((s) => ({
   id: uid(), saleId: s.id, date: s.date, time: "", amount: s.paid != null ? s.paid : s.total, pay: s.pay,
 }));
 
-const seedPurchases = [
-  { id: uid(), date: daysAgo(0), client: "Ousmane Sow", karat: 18, weight: 14.3, ppg: 54000, total: 772200, pay: "Espèces", note: "Bijoux cassés" },
-  { id: uid(), date: daysAgo(2), client: "Awa Bâ", karat: 21, weight: 9.1, ppg: 63000, total: 573300, pay: "Espèces", paid: 300000, note: "Ancienne bague" },
-  { id: uid(), date: daysAgo(4), client: "Mamadou Fall", karat: 18, weight: 31.0, ppg: 54000, total: 1674000, pay: "Banque", note: "Lot débris" },
-  { id: uid(), date: daysAgo(6), client: "Fatou Ndiaye", karat: 22, weight: 5.5, ppg: 66000, total: 363000, pay: "Espèces", note: "Chaîne héritage" },
-];
+const seedPurchases = [];
 // registre des paiements d'achats : chaque rachat a au moins un paiement initial (au client)
 const seedPurchasePayments = seedPurchases.map((p) => ({
   id: uid(), purchaseId: p.id, date: p.date, time: "", amount: p.paid != null ? p.paid : p.total, pay: p.pay || "Espèces",
 }));
 
-const seedClosures = [
-  { id: uid(), date: daysAgo(1), time: "19:42", fond: 100000, esp: 505000, wave: 0, om: 0, vir: 0, caTotal: 505000, rachats: 0, depenses: 0, theorique: 605000, compte: 603000, ecart: -2000 },
-];
+const seedClosures = [];
 
-const seedExpenses = [
-  { id: uid(), date: daysAgo(0), label: "Transport approvisionnement", cat: "Transport", amount: 8000, pay: "Espèces" },
-  { id: uid(), date: daysAgo(2), label: "Facture électricité", cat: "Électricité", amount: 45000, pay: "Orange Money" },
-  { id: uid(), date: daysAgo(5), label: "Loyer boutique (mois)", cat: "Loyer", amount: 250000, pay: "Banque" },
-  { id: uid(), date: daysAgo(6), label: "Salaire apprenti", cat: "Salaire", amount: 120000, pay: "Espèces" },
-];
+const seedExpenses = [];
 
 const TREASURY_ACCOUNTS = [
   { id: "banque", label: "Banque", icon: "🏦" },
@@ -421,7 +370,7 @@ const seedUsers = [
   mkUser("Awa (vendeuse)", "vendeur", "awa123", "awa@atelier.sn"),
 ];
 
-const INITIAL_CASH = 3200000;
+const INITIAL_CASH = 0;
 
 /* ------------------------------ composants ------------------------------ */
 const Badge = ({ k }) => <span className="karat">{k ? k + "K" : "brut"}</span>;
@@ -3300,7 +3249,7 @@ export default function App() {
   const [lockDelay, setLockDelay] = useState(5); // minutes d'inactivité avant reverrouillage (0 = jamais)
   const saveLockDelay = (min) => { setLockDelay(min); try { STORE.set("atelierdor:lockdelay", String(min)); } catch (e) { /* */ } };
   const savePin = (cfg) => { setPin(cfg); try { if (cfg) STORE.set("atelierdor:pin", JSON.stringify(cfg)); else STORE.del("atelierdor:pin"); } catch (e) { /* */ } };
-  const [fondCaisse, setFondCaisse] = useState(100000);
+  const [fondCaisse, setFondCaisse] = useState(0);
   const [compteCaisse, setCompteCaisse] = useState("");
   const [zView, setZView] = useState(null);
 
