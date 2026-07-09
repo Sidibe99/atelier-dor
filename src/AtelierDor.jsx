@@ -2333,6 +2333,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
         <div className="reseller-actions">
           <button className="btn btn-gold" onClick={() => setModal({ mode: "create" })}><Plus size={16} /> Nouvelle boutique</button>
           <button className="btn btn-line" onClick={() => setModal({ mode: "pricing" })}>Prix / Formules</button>
+          <button className="btn btn-line" onClick={() => setModal({ mode: "password" })}>🔒 Mot de passe</button>
           <button className="btn btn-line" onClick={onSignOut}><LogOut size={15} /> Déconnexion</button>
         </div>
       </header>
@@ -2397,6 +2398,7 @@ function ResellerSpace({ authUser, onSignOut, onExit, onPricesSaved, logo }) {
       {modal && modal.mode === "account" && <AccountModal shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => createAccountForShop(modal.shop, vals)} />}
       {modal && modal.mode === "renew" && <ShopFormModal mode="renew" shop={modal.shop} onClose={() => setModal(null)} onSubmit={(vals) => renewShop(modal.shop, vals)} />}
       {modal && modal.mode === "pricing" && <PricingModal onClose={() => setModal(null)} onSaved={onPricesSaved} />}
+      {modal && modal.mode === "password" && <Modal title="Changer mon mot de passe" sub="Il reste masqué et n'est jamais affiché" onClose={() => setModal(null)}><PasswordChange /></Modal>}
       {modal && modal.mode === "payments" && <PaymentsModal shop={modal.shop} onClose={() => { setModal(null); load(); }} />}
       {confirmShop && <ConfirmModal title={confirmShop.next === "suspended" ? "Suspendre cette boutique ?" : "Réactiver cette boutique ?"} message={confirmShop.next === "suspended" ? `« ${confirmShop.shop.name} » : l'accès sera bloqué jusqu'à réactivation.` : `« ${confirmShop.shop.name} » : l'accès sera rétabli.`} okLabel={confirmShop.next === "suspended" ? "Suspendre" : "Réactiver"} danger={confirmShop.next === "suspended"} onCancel={() => setConfirmShop(null)} onOk={() => { const c = confirmShop; setConfirmShop(null); doToggleStatus(c.shop, c.next); }} />}
       {deleteShop && <DeleteShopModal shop={deleteShop} onCancel={() => setDeleteShop(null)} onConfirm={() => doDeleteShop(deleteShop)} />}
